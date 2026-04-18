@@ -408,3 +408,30 @@ def delete(trip_id: str, force: bool) -> None:
 
 if __name__ == "__main__":
     cli()
+
+
+@cli.command()
+@click.option("--host", default=None, help="Bind host (default: 0.0.0.0)")
+@click.option("--port", type=int, default=None, help="Bind port (default: 8000)")
+@click.option("--dev", is_flag=True, help="Enable auto-reload for development")
+def web(host: str | None, port: int | None, dev: bool) -> None:
+    """Start the FastAPI web server."""
+    settings = get_settings()
+    bind_host = host or settings.host
+    bind_port = port or settings.port
+
+    console.print(f"[bold green]Starting TripPlanner web server[/bold green]")
+    console.print(f"  Host: {bind_host}")
+    console.print(f"  Port: {bind_port}")
+    console.print(f"  Docs: http://{bind_host}:{bind_port}/docs")
+    console.print()
+
+    import uvicorn
+
+    uvicorn.run(
+        "tripplanner.web:create_app",
+        host=bind_host,
+        port=bind_port,
+        reload=dev,
+        factory=True,
+    )
