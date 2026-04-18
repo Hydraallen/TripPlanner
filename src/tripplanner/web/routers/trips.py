@@ -5,6 +5,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from tripplanner.core.models import Trip
@@ -12,6 +13,9 @@ from tripplanner.db.crud import delete_trip as db_delete
 from tripplanner.db.crud import get_trip as db_get
 from tripplanner.db.crud import list_trips as db_list
 from tripplanner.db.crud import save_trip as db_save
+from tripplanner.export.html_gen import export_html
+from tripplanner.export.json_export import export_json
+from tripplanner.export.markdown import export_markdown
 from tripplanner.web.deps import get_session
 
 router = APIRouter(tags=["trips"])
@@ -77,3 +81,33 @@ async def delete_trip_endpoint(
     if not deleted:
         raise HTTPException(status_code=404, detail="Trip not found")
     return {"status": "deleted"}
+
+
+_EXPORT_FORMATS = {
+    "markdown": ("text/markdown", export_markdown),
+    "json": ("application/json", export_json),
+    "html": ("text/html", export_html),
+}
+
+
+@router.get("/trips/{trip_id}/export")
+async def export_trip_endpoint(
+    trip_id: str,
+    format: str = "markdown",
+    session: AsyncSession = Depends(get_session),
+) -> PlainTextResponse:
+    if format not in _EXPORT_FORMATS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported format: {format}. Use: {', '.join(_EXPORT_FORMATS)}",
+        )
+
+    trip = await db_get(session, trip_id)
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+    if not trip.plan:
+        raise HTTPException(status_code=404, detail="Trip has no itinerary to export")
+
+    content_type, exporter = _EXPORT_FORMATS[format]
+    content = exporter(trip.plan)
+    return PlainTextResponse(content=content, media_type=content_type)
