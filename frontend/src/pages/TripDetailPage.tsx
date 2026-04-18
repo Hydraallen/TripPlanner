@@ -2,26 +2,22 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Typography,
-  Card,
-  List,
-  Tag,
   Button,
   Space,
   Spin,
-  Descriptions,
   message,
+  Row,
+  Col,
 } from "antd";
 import {
   DownloadOutlined,
   ArrowLeftOutlined,
   EnvironmentOutlined,
 } from "@ant-design/icons";
-import {
-  getTrip,
-  exportTrip,
-  type Trip,
-  type DayPlan,
-} from "../api/client";
+import { getTrip, exportTrip, type Trip, type DayPlan } from "../api/client";
+import MapView from "../components/MapView";
+import DayCard from "../components/DayCard";
+import BudgetChart from "../components/BudgetChart";
 
 const { Title, Text } = Typography;
 
@@ -30,6 +26,7 @@ const TripDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const [trip, setTrip] = useState<Trip | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedAttraction, setSelectedAttraction] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -76,7 +73,7 @@ const TripDetailPage: React.FC = () => {
   const plan = trip.plan;
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto" }}>
+    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
       <Button
         icon={<ArrowLeftOutlined />}
         onClick={() => navigate("/trips")}
@@ -92,29 +89,7 @@ const TripDetailPage: React.FC = () => {
         {plan.start_date} — {plan.end_date} &middot; {plan.days.length} days
       </Text>
 
-      {plan.budget && (
-        <Card size="small" style={{ margin: "16px 0" }}>
-          <Descriptions title="Budget Overview" size="small" column={4}>
-            <Descriptions.Item label="Attractions">
-              {plan.budget.total_attractions.toFixed(0)}
-            </Descriptions.Item>
-            <Descriptions.Item label="Meals">
-              {plan.budget.total_meals.toFixed(0)}
-            </Descriptions.Item>
-            <Descriptions.Item label="Hotels">
-              {plan.budget.total_hotels.toFixed(0)}
-            </Descriptions.Item>
-            <Descriptions.Item label="Transport">
-              {plan.budget.total_transportation.toFixed(0)}
-            </Descriptions.Item>
-          </Descriptions>
-          <Title level={5} style={{ marginTop: 8 }}>
-            Total: {plan.budget.total.toFixed(0)}
-          </Title>
-        </Card>
-      )}
-
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ margin: "16px 0" }}>
         <Button icon={<DownloadOutlined />} onClick={() => handleExport("markdown")}>
           Markdown
         </Button>
@@ -126,55 +101,36 @@ const TripDetailPage: React.FC = () => {
         </Button>
       </Space>
 
-      {plan.days.map((day: DayPlan) => (
-        <Card
-          key={day.day_number}
-          title={`Day ${day.day_number} — ${day.date}`}
-          size="small"
-          style={{ marginBottom: 12 }}
-          extra={<Tag>{day.transportation}</Tag>}
-        >
-          {day.attractions.length > 0 && (
-            <List
-              size="small"
-              dataSource={day.attractions}
-              renderItem={(a) => (
-                <List.Item>
-                  <List.Item.Meta
-                    title={
-                      <span>
-                        {a.name}
-                        {a.rating && (
-                          <Tag color="blue" style={{ marginLeft: 8 }}>
-                            {a.rating.toFixed(1)}
-                          </Tag>
-                        )}
-                      </span>
-                    }
-                    description={a.address || a.kinds}
-                  />
-                </List.Item>
-              )}
+      <Row gutter={[24, 24]}>
+        <Col xs={24} lg={14}>
+          <div style={{ position: "sticky", top: 16 }}>
+            <MapView
+              days={plan.days}
+              selectedAttraction={selectedAttraction}
+              onAttractionClick={setSelectedAttraction}
             />
-          )}
-          {day.meals.length > 0 && (
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary">Meals:</Text>
-              <List
-                size="small"
-                dataSource={day.meals}
-                renderItem={(m) => (
-                  <List.Item>
-                    <Text>
-                      {m.type}: {m.name} (~{m.estimated_cost.toFixed(0)})
-                    </Text>
-                  </List.Item>
-                )}
+          </div>
+        </Col>
+        <Col xs={24} lg={10}>
+          <div style={{ marginBottom: 16 }}>
+            <BudgetChart budget={plan.budget} />
+          </div>
+          {plan.days.map((day: DayPlan) => {
+            const weather = plan.weather?.find(
+              (w) => w.date === day.date
+            );
+            return (
+              <DayCard
+                key={day.day_number}
+                day={day}
+                weather={weather || null}
+                selected={day.attractions.some((a) => a.xid === selectedAttraction)}
+                onAttractionClick={setSelectedAttraction}
               />
-            </div>
-          )}
-        </Card>
-      ))}
+            );
+          })}
+        </Col>
+      </Row>
     </div>
   );
 };
