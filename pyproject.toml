@@ -29,6 +29,9 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.10",
 ]
+postgres = [
+    "asyncpg>=0.29",
+]
 
 [project.scripts]
 tripplanner = "tripplanner.cli:cli"

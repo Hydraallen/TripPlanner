@@ -29,7 +29,7 @@
 | S18 | LLM Integration + Chat API | Done | [S18-contract.md](S18-contract.md) | 5 |
 | S19 | React Scaffolding + Core Pages | Done | [S19-contract.md](S19-contract.md) | 5 |
 | S20 | Map Visualization + Display | Done | [S20-contract.md](S20-contract.md) | 5 |
-| S21 | Chat Panel + Polish | Not Started | [S21-contract.md](S21-contract.md) | 5 |
+| S21 | Chat Panel + Polish | Done | [S21-contract.md](S21-contract.md) | 5 |
 | S22 | Docker Setup | Not Started | [S22-contract.md](S22-contract.md) | 5 |
 | S23 | E2E Testing + Documentation | Not Started | [S23-contract.md](S23-contract.md) | 5 |
 
