@@ -1,0 +1,22 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    opentripmap_api_key: str = ""
+    opentripmap_base_url: str = "https://api.opentripmap.com/0.1/en"
+    openmeteo_base_url: str = "https://api.open-meteo.com/v1"
+    wikipedia_base_url: str = "https://en.wikipedia.org/api/rest_v1"
+    database_url: str = "sqlite+aiosqlite:///./trips.db"
+    max_places_per_trip: int = 20
+    default_search_radius: int = 10000
+    cache_ttl: int = 86400
+    default_visit_duration: int = 90
+    walking_speed_kmh: float = 5.0
+    transit_speed_kmh: float = 25.0
+    driving_speed_kmh: float = 30.0
+
+    model_config = SettingsConfigDict(env_file=".env")
+
+
+def get_settings() -> Settings:
+    return Settings()
