@@ -15,6 +15,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     messages: list[dict[str, str]]
     plan_context: str | None = None
+    plans_context: str | None = None
 
 
 @router.post("")
@@ -26,7 +27,10 @@ async def chat_endpoint(req: ChatRequest) -> dict[str, str]:
         return {"response": "Chat is not configured. Please set OPENAI_API_KEY."}
 
     async with LLMClient(settings) as client:
-        response = await client.chat(req.messages, req.plan_context)
+        context = req.plan_context or ""
+        if req.plans_context:
+            context = f"{context}\n\n{req.plans_context}" if context else req.plans_context
+        response = await client.chat(req.messages, context if context else None)
     return {"response": response}
 
 

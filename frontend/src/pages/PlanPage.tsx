@@ -5,6 +5,7 @@ import { CheckCircleOutlined, RocketOutlined } from "@ant-design/icons";
 import TripForm from "../components/TripForm";
 import type { TripFormValues } from "../components/TripForm";
 import PlanComparison from "../components/PlanComparison";
+import ChatPanel from "../components/ChatPanel";
 import {
   generateMultiPlan,
   getPlanAlternatives,
@@ -26,6 +27,8 @@ const PlanPage: React.FC = () => {
   const [alternatives, setAlternatives] = useState<PlanAlternative[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [plansContext, setPlansContext] = useState<string | null>(null);
   const esRef = useRef<EventSource | null>(null);
 
   const handleProgress = useCallback((prog: GenerationProgress) => {
@@ -111,6 +114,19 @@ const PlanPage: React.FC = () => {
     }
   };
 
+  const handleCompareWithAI = () => {
+    const summary = alternatives
+      .map((alt) => {
+        const scoreStr = alt.scores
+          ? `Score: ${Math.round((alt.scores.total ?? 0) * 100)} (Price:${Math.round((alt.scores.price ?? 0) * 100)} Rating:${Math.round((alt.scores.rating ?? 0) * 100)} Convenience:${Math.round((alt.scores.convenience ?? 0) * 100)} Diversity:${Math.round((alt.scores.diversity ?? 0) * 100)})`
+          : "No scores";
+        return `- ${alt.title} (${alt.focus}): ${alt.description || "No description"}. Cost: ¥${alt.estimated_cost}. ${scoreStr}`;
+      })
+      .join("\n");
+    setPlansContext(`I'm comparing these 3 travel plans:\n${summary}\n\nPlease help me compare them and recommend the best one.`);
+    setChatOpen(true);
+  };
+
   const handleReset = () => {
     setTripId(null);
     setProgress(null);
@@ -170,6 +186,7 @@ const PlanPage: React.FC = () => {
             selectedId={selectedPlanId ?? undefined}
             onSelect={handleSelectPlan}
             loading={selecting}
+            onCompareWithAI={handleCompareWithAI}
           />
           {selectedPlanId && (
             <Card style={{ marginTop: 16, textAlign: "center" }}>
@@ -196,6 +213,12 @@ const PlanPage: React.FC = () => {
           />
         </Card>
       )}
+
+      <ChatPanel
+        externalOpen={chatOpen}
+        onOpenChange={setChatOpen}
+        planContext={plansContext}
+      />
     </div>
   );
 };

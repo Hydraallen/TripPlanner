@@ -4,6 +4,7 @@ import {
   TrophyOutlined,
   ThunderboltOutlined,
   AppstoreOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import type { PlanAlternative, PlanScores } from "../api/client";
 
@@ -42,6 +43,7 @@ interface PlanComparisonProps {
   selectedId?: string;
   onSelect: (planId: string) => void;
   loading?: boolean;
+  onCompareWithAI?: () => void;
 }
 
 export default function PlanComparison({
@@ -49,6 +51,7 @@ export default function PlanComparison({
   selectedId,
   onSelect,
   loading,
+  onCompareWithAI,
 }: PlanComparisonProps) {
   const bestId = alternatives.reduce((best, alt) => {
     if (!best) return alt.id;
@@ -57,7 +60,19 @@ export default function PlanComparison({
   }, "");
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+    <div>
+      {onCompareWithAI && (
+        <div style={{ marginBottom: 16, textAlign: "center" }}>
+          <Button
+            icon={<RobotOutlined />}
+            size="large"
+            onClick={onCompareWithAI}
+          >
+            Ask AI to Compare Plans
+          </Button>
+        </div>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
       {alternatives.map((alt) => {
         const config = FOCUS_CONFIG[alt.focus] ?? FOCUS_CONFIG.budget;
         const isSelected = alt.id === selectedId;
@@ -116,6 +131,7 @@ export default function PlanComparison({
           </Card>
         );
       })}
+      </div>
     </div>
   );
 }

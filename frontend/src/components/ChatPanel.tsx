@@ -21,11 +21,16 @@ interface Message {
 
 interface Props {
   planContext?: string | null;
+  externalOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  initialMessages?: Message[];
 }
 
-const ChatPanel: React.FC<Props> = ({ planContext }) => {
-  const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([]);
+const ChatPanel: React.FC<Props> = ({ planContext, externalOpen, onOpenChange, initialMessages }) => {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen ?? internalOpen;
+  const setOpen = onOpenChange ?? setInternalOpen;
+  const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);

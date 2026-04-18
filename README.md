@@ -77,7 +77,9 @@ CLI (Click)              React SPA (Vite + Ant Design + Leaflet)
               │
     ┌─────────┼─────────────┐
     │         │             │
-  Scorer  Optimizer  Scheduler → Budget
+  PlanGen   Scorer      Scheduler → Budget
+  (3-focus  (4-dim)       Optimizer
+  LLM calls)
     │
   API Clients (smart routing)
   China: Amap │ International: Overpass API (OSM)
@@ -98,8 +100,10 @@ CLI (Click)              React SPA (Vite + Ant Design + Leaflet)
 | GET | `/api/trips/{id}` | Get trip details |
 | DELETE | `/api/trips/{id}` | Delete a trip |
 | GET | `/api/trips/{id}/export?format=` | Export (markdown/json/html) |
-| POST | `/api/plans/generate` | Generate plan (algorithmic) |
-| POST | `/api/plans/generate-llm` | Generate plan (AI with fallback) |
+| POST | `/api/plans/generate` | Generate 3 plan alternatives |
+| GET | `/api/plans/{id}/progress` | SSE progress stream |
+| GET | `/api/plans/{id}/plans` | Get plan alternatives with scores |
+| POST | `/api/plans/{id}/select` | Select a plan |
 | POST | `/api/chat` | Chat with travel advisor |
 | GET | `/api/chat/stream` | SSE streaming chat |
 

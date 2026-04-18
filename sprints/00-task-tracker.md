@@ -32,6 +32,11 @@
 | S21 | Chat Panel + Polish | Done | [S21-contract.md](S21-contract.md) | 5 |
 | S22 | Docker Setup | Done | [S22-contract.md](S22-contract.md) | 5 |
 | S23 | E2E Testing + Documentation | Done | [S23-contract.md](S23-contract.md) | 5 |
+| S24 | Multi-Plan Data Models + DB Schema | Done | — | 6 |
+| S25 | AI Plan Generator + Scorer | Done | — | 6 |
+| S26 | SSE Progress + Multi-Plan API | Done | — | 6 |
+| S27 | Frontend Plan Comparison UI | Done | — | 6 |
+| S28 | Enhanced AI Chat + Polish | Done | — | 6 |
 
 ## Dependencies
 
@@ -59,6 +64,8 @@ S01 ──→ S02 ──→ S03 ──→ S04
 | 2 | Generate valid 3-day itinerary with 8-12 places, optimized routes, budget | S05-S08 |
 | 3 | Full CLI workflow: plan → save → list → show → export → delete | S09-S11 |
 | 4 | Demo-ready, 80%+ coverage, weather, optional Wikipedia | S12-S15 |
+| 5 | Full-stack: FastAPI backend + React frontend + Docker | S16-S23 |
+| 6 | AI-first multi-plan: 3 alternatives, SSE progress, scoring, AI chat | S24-S28 |
 
 ## Evaluation Roles
 
