@@ -20,6 +20,10 @@ class TripRow(Base):
     interests: Mapped[str] = mapped_column(Text, nullable=False)  # JSON
     transport_mode: Mapped[str] = mapped_column(String(20), nullable=False)
     plan_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="draft", nullable=False)
+    generated_plans: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
+    selected_plan_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    progress_data: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

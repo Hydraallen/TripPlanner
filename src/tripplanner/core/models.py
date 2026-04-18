@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -179,3 +180,47 @@ class Trip(BaseModel):
     transport_mode: str = "walking"
     plan: TripPlan | None = None
     created_at: datetime
+
+
+# --- Multi-Plan layer ---
+
+
+class PlanFocus(StrEnum):
+    """Focus type for plan alternatives."""
+
+    BUDGET = "budget"
+    CULTURE = "culture"
+    NATURE = "nature"
+
+
+class PlanScores(BaseModel):
+    """Multi-dimensional scores for a plan alternative."""
+
+    price: float = Field(default=0, ge=0, le=1)
+    rating: float = Field(default=0, ge=0, le=1)
+    convenience: float = Field(default=0, ge=0, le=1)
+    diversity: float = Field(default=0, ge=0, le=1)
+    total: float = Field(default=0, ge=0, le=1)
+
+
+class PlanAlternative(BaseModel):
+    """A single plan alternative in a multi-plan generation."""
+
+    id: str
+    focus: PlanFocus
+    title: str
+    description: str = ""
+    plan: TripPlan
+    scores: PlanScores | None = None
+    estimated_cost: float = Field(default=0, ge=0)
+    source: str = "llm"
+
+
+class GenerationProgress(BaseModel):
+    """Real-time progress for plan generation."""
+
+    plan_id: str
+    status: str = "collecting"
+    progress: float = Field(default=0, ge=0, le=100)
+    step: str = ""
+    preview: dict | None = None

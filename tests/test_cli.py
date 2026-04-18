@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -92,6 +92,25 @@ class TestPlanDates:
         assert result.exit_code != 0
         assert "after start" in result.output
 
-    def test_interests_split(self, runner: CliRunner) -> None:
-        result = runner.invoke(cli, ["plan", "--city", "Tokyo", "--interests", "museums,food"])
+    @patch("tripplanner.cli.OpenTripMapClient")
+    @patch("tripplanner.cli.db_save", new_callable=AsyncMock, return_value="test-id")
+    def test_interests_split(
+        self, mock_save: AsyncMock, mock_client_cls: AsyncMock, runner: CliRunner
+    ) -> None:
+        mock_instance = AsyncMock()
+        mock_instance.geoname.return_value = (35.6762, 139.6503)
+        mock_instance.search_city.return_value = [_mock_attraction("Museum")]
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_instance
+
+        with patch("tripplanner.cli._get_session", new_callable=AsyncMock) as mock_get_session:
+            mock_session = AsyncMock()
+            mock_factory = MagicMock()
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_get_session.return_value = mock_factory
+
+            result = runner.invoke(cli, ["plan", "--city", "Tokyo", "--interests", "museums,food"])
+
         assert result.exit_code == 0

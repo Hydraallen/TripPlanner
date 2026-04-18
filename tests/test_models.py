@@ -8,9 +8,13 @@ from tripplanner.core.models import (
     Attraction,
     Budget,
     DayPlan,
+    GenerationProgress,
     Hotel,
     Location,
     Meal,
+    PlanAlternative,
+    PlanFocus,
+    PlanScores,
     Trip,
     TripPlan,
     WeatherInfo,
@@ -280,3 +284,124 @@ class TestTrip:
         )
         data = json.loads(t.model_dump_json())
         assert Trip.model_validate(data) == t
+
+
+# --- PlanFocus ---
+
+
+class TestPlanFocus:
+    def test_values(self) -> None:
+        assert PlanFocus.BUDGET == "budget"
+        assert PlanFocus.CULTURE == "culture"
+        assert PlanFocus.NATURE == "nature"
+
+    def test_from_string(self) -> None:
+        assert PlanFocus("budget") is PlanFocus.BUDGET
+
+
+# --- PlanScores ---
+
+
+class TestPlanScores:
+    def test_defaults(self) -> None:
+        s = PlanScores()
+        assert s.total == 0.0
+
+    def test_custom_values(self) -> None:
+        s = PlanScores(price=0.8, rating=0.7, convenience=0.6, diversity=0.9)
+        assert s.price == 0.8
+
+    def test_rejects_out_of_range(self) -> None:
+        with pytest.raises(ValidationError):
+            PlanScores(price=1.5)
+
+    def test_round_trip(self) -> None:
+        s = PlanScores(price=0.5, rating=0.6, convenience=0.7, diversity=0.8, total=0.65)
+        assert PlanScores.model_validate(s.model_dump()) == s
+
+
+# --- PlanAlternative ---
+
+
+class TestPlanAlternative:
+    def _make_plan(self) -> TripPlan:
+        return TripPlan(city="Tokyo", start_date=date(2026, 4, 10), end_date=date(2026, 4, 13))
+
+    def test_basic(self) -> None:
+        alt = PlanAlternative(
+            id="plan_1",
+            focus=PlanFocus.BUDGET,
+            title="Budget-Friendly",
+            plan=self._make_plan(),
+        )
+        assert alt.focus == PlanFocus.BUDGET
+        assert alt.source == "llm"
+        assert alt.estimated_cost == 0
+
+    def test_with_scores(self) -> None:
+        scores = PlanScores(price=0.9, rating=0.6, total=0.75)
+        alt = PlanAlternative(
+            id="plan_2",
+            focus=PlanFocus.CULTURE,
+            title="Culture Explorer",
+            plan=self._make_plan(),
+            scores=scores,
+            estimated_cost=5000,
+        )
+        assert alt.scores is not None
+        assert alt.scores.total == 0.75
+        assert alt.estimated_cost == 5000
+
+    def test_round_trip(self) -> None:
+        alt = PlanAlternative(
+            id="plan_3",
+            focus=PlanFocus.NATURE,
+            title="Nature Retreat",
+            description="Relaxing nature trip",
+            plan=self._make_plan(),
+            scores=PlanScores(diversity=0.8),
+        )
+        data = json.loads(alt.model_dump_json())
+        assert PlanAlternative.model_validate(data) == alt
+
+
+# --- GenerationProgress ---
+
+
+class TestGenerationProgress:
+    def test_defaults(self) -> None:
+        p = GenerationProgress(plan_id="abc")
+        assert p.status == "collecting"
+        assert p.progress == 0
+
+    def test_custom(self) -> None:
+        p = GenerationProgress(
+            plan_id="abc",
+            status="generating",
+            progress=50.0,
+            step="Generating culture plan... (2/3)",
+        )
+        assert p.progress == 50.0
+        assert "2/3" in p.step
+
+    def test_with_preview(self) -> None:
+        p = GenerationProgress(
+            plan_id="abc",
+            status="collecting",
+            progress=20,
+            preview={"places_found": 15},
+        )
+        assert p.preview == {"places_found": 15}
+
+    def test_rejects_over_100(self) -> None:
+        with pytest.raises(ValidationError):
+            GenerationProgress(plan_id="abc", progress=150)
+
+    def test_round_trip(self) -> None:
+        p = GenerationProgress(
+            plan_id="abc",
+            status="completed",
+            progress=100,
+            step="Done!",
+        )
+        assert GenerationProgress.model_validate(p.model_dump()) == p
