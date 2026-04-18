@@ -169,6 +169,100 @@ class TestSearchPlaces:
         places = await client.search_places(35.68, 139.69, 10000)
         assert places == []
 
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_name_en_fallback(self, client: OpenTripMapClient) -> None:
+        """Elements without 'name' but with 'name:en' should be parsed."""
+        data = {
+            "elements": [
+                {
+                    "type": "node",
+                    "id": 555,
+                    "lat": 35.68,
+                    "lon": 139.69,
+                    "tags": {
+                        "name:en": "English Name Place",
+                        "tourism": "museum",
+                    },
+                }
+            ]
+        }
+        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        places = await client.search_places(35.68, 139.69, 10000)
+        assert len(places) == 1
+        assert places[0].name == "English Name Place"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_alt_name_fallback(self, client: OpenTripMapClient) -> None:
+        """Elements with 'alt_name' but no 'name' should be parsed."""
+        data = {
+            "elements": [
+                {
+                    "type": "node",
+                    "id": 666,
+                    "lat": 35.68,
+                    "lon": 139.69,
+                    "tags": {
+                        "alt_name": "Alt Name Place",
+                        "tourism": "attraction",
+                    },
+                }
+            ]
+        }
+        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        places = await client.search_places(35.68, 139.69, 10000)
+        assert len(places) == 1
+        assert places[0].name == "Alt Name Place"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_description_uses_wikipedia_tag(self, client: OpenTripMapClient) -> None:
+        """Description should prefer 'wikipedia' tag over 'wikidata'."""
+        data = {
+            "elements": [
+                {
+                    "type": "node",
+                    "id": 777,
+                    "lat": 35.68,
+                    "lon": 139.69,
+                    "tags": {
+                        "name": "Famous Place",
+                        "tourism": "attraction",
+                        "wikipedia": "en:Famous Place",
+                        "wikidata": "Q12345",
+                    },
+                }
+            ]
+        }
+        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        places = await client.search_places(35.68, 139.69, 10000)
+        assert len(places) == 1
+        assert places[0].description == "en:Famous Place"
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_building_tag_in_categories(self, client: OpenTripMapClient) -> None:
+        """Building tag should appear in categories."""
+        data = {
+            "elements": [
+                {
+                    "type": "node",
+                    "id": 888,
+                    "lat": 35.68,
+                    "lon": 139.69,
+                    "tags": {
+                        "name": "Grand Cathedral",
+                        "building": "cathedral",
+                    },
+                }
+            ]
+        }
+        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        places = await client.search_places(35.68, 139.69, 10000)
+        assert len(places) == 1
+        assert "cathedral" in places[0].categories
+
 
 # --- place_detail ---
 

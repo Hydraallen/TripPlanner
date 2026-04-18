@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -11,42 +12,110 @@ from tripplanner.core.models import Attraction, Location
 logger = logging.getLogger(__name__)
 
 NOMINATIM_BASE = "https://nominatim.openstreetmap.org"
-OVERPASS_BASE = "https://overpass-api.de/api/interpreter"
+OVERPASS_BASE = "https://overpass.private.coffee/api/interpreter"
 
-# Map interest keywords to OSM tourism/amenity tags
+# Map interest keywords to OSM Overpass QL tag selectors.
+# Uses "nw" (node+way) and "nwr" (node+way+relation) type filters
+# to halve query fragment count vs separate node/way entries.
 _INTEREST_TO_OVERPASS: dict[str, list[str]] = {
-    "museums": ['node["tourism"="museum"]', 'way["tourism"="museum"]'],
-    "architecture": [
-        'node["historic"]',
-        'way["historic"]',
-        'node["building"="cathedral"]',
-    ],
-    "temples": ['node["amenity"="place_of_worship"]', 'way["amenity"="place_of_worship"]'],
-    "religion": ['node["amenity"="place_of_worship"]'],
-    "towers": ['node["tower"="observation"]', 'way["tower"="observation"]'],
-    "nature": [
-        'node["leisure"="park"]',
+    # --- Default / general ---
+    # Curated for high-quality, notable attractions.
+    # artwork/memorial excluded from default — too many minor entries.
+    # Use "art" or "architecture" interests for those.
+    "interesting_places": [
+        'nwr["tourism"="attraction"]',
+        'node["tourism"="viewpoint"]',
+        'nw["tourism"="museum"]',
+        'nw["tourism"="gallery"]',
+        'node["tourism"="zoo"]',
         'way["leisure"="park"]',
+        'way["leisure"="garden"]',
+        'nw["historic"="monument"]',
+        'nw["historic"="castle"]',
+        'nw["historic"="fort"]',
+        'nw["historic"="ship"]',
+        'nw["amenity"="theatre"]',
+        'nw["amenity"="library"]',
+        'nw["building"="palace"]',
+    ],
+    # --- Thematic interests ---
+    "museums": [
+        'nw["tourism"="museum"]',
+        'nw["amenity"="arts_centre"]',
+    ],
+    "architecture": [
+        'nw["building"="cathedral"]',
+        'nw["building"="chapel"]',
+        'nw["building"="palace"]',
+        'nw["building"="castle"]',
+        'nw["building"="church"]',
+        'nw["historic"="monument"]',
+        'nw["historic"="memorial"]',
+        'nw["historic"="archaeological_site"]',
+        'nw["historic"="castle"]',
+        'nw["historic"="ruins"]',
+    ],
+    "temples": [
+        'nw["amenity"="place_of_worship"]',
+    ],
+    "religion": [
+        'nw["amenity"="place_of_worship"]',
+    ],
+    "towers": [
+        'nw["tower"="observation"]',
+        'node["tourism"="viewpoint"]',
+    ],
+    "nature": [
+        'nw["leisure"="park"]',
         'node["natural"="peak"]',
+        'nw["natural"="wood"]',
+        'nw["natural"="water"]',
+        'nw["leisure"="nature_reserve"]',
+        'node["tourism"="zoo"]',
+    ],
+    "parks": [
+        'nw["leisure"="park"]',
+        'nw["leisure"="garden"]',
+        'nw["natural"="wood"]',
+        'nw["leisure"="nature_reserve"]',
     ],
     "food": [
-        'node["amenity"="restaurant"]',
-        'way["amenity"="restaurant"]',
-        'node["amenity"="cafe"]',
+        'nw["amenity"="restaurant"]',
+        'nw["amenity"="cafe"]',
+        'node["amenity"="bar"]',
+        'node["amenity"="pub"]',
+        'node["amenity"="fast_food"]',
     ],
-    "beaches": ['node["natural"="beach"]', 'way["natural"="beach"]'],
-    "shopping": ['node["shop"="mall"]', 'way["shop"="mall"]'],
-    "theatres": ['node["amenity"="theatre"]', 'way["amenity"="theatre"]'],
-    "gardens": ['node["leisure"="garden"]', 'way["leisure"="garden"]'],
-    "fortifications": ['node["historic"="castle"]', 'way["historic"="castle"]'],
-    "interesting_places": [
-        'node["tourism"="attraction"]',
-        'way["tourism"="attraction"]',
-        'node["tourism"="viewpoint"]',
-        'node["tourism"="museum"]',
-        'way["tourism"="museum"]',
-        'node["historic"]',
-        'way["historic"]',
+    "beaches": [
+        'nw["natural"="beach"]',
+    ],
+    "shopping": [
+        'nw["shop"="mall"]',
+    ],
+    "theatres": [
+        'nw["amenity"="theatre"]',
+    ],
+    "gardens": [
+        'nw["leisure"="garden"]',
+    ],
+    "fortifications": [
+        'nw["historic"="castle"]',
+    ],
+    "art": [
+        'nw["tourism"="gallery"]',
+        'nw["tourism"="artwork"]',
+        'nw["amenity"="arts_centre"]',
+    ],
+    "nightlife": [
+        'node["amenity"="bar"]',
+        'node["amenity"="pub"]',
+        'node["amenity"="nightclub"]',
+    ],
+    "entertainment": [
+        'nw["amenity"="cinema"]',
+        'nw["amenity"="theatre"]',
+        'node["amenity"="nightclub"]',
+        'nw["leisure"="sports_centre"]',
     ],
 }
 
@@ -60,7 +129,7 @@ class OpenTripMapClient:
 
     def __init__(self, settings: Settings | None = None) -> None:
         self._settings = settings or Settings()
-        self._client = httpx.AsyncClient(timeout=30.0)
+        self._client = httpx.AsyncClient(timeout=45.0)
         self._nominatim = httpx.AsyncClient(
             base_url=NOMINATIM_BASE,
             timeout=10.0,
@@ -103,35 +172,52 @@ class OpenTripMapClient:
         kinds: str | None = None,
         limit: int = 100,
     ) -> list[Attraction]:
-        """Fetch POIs within radius using Overpass API."""
+        """Fetch POIs within radius using Overpass API.
+
+        Splits large query sets into batches to avoid Overpass timeouts.
+        """
         interest_list = kinds.split(",") if kinds else ["interesting_places"]
         queries = self._build_overpass_queries(lat, lon, radius, interest_list)
-        query = self._combine_queries(queries, limit)
 
-        if not query:
+        if not queries:
             return []
 
-        try:
-            resp = await self._client.post(
-                OVERPASS_BASE,
-                data={"data": query},
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            logger.warning("Overpass API request failed: %s", e)
-            return []
+        # Split into batches of ~8 query fragments to avoid Overpass timeouts
+        batch_size = 8
+        batches = [
+            queries[i : i + batch_size]
+            for i in range(0, len(queries), batch_size)
+        ]
 
-        elements = data.get("elements", [])
         seen_ids: set[str] = set()
         places: list[Attraction] = []
 
-        for elem in elements:
-            parsed = self._parse_element(elem)
-            if parsed and parsed.xid not in seen_ids:
-                seen_ids.add(parsed.xid)
-                places.append(parsed)
+        for i, batch in enumerate(batches):
+            # Delay between batches to avoid Overpass rate limits
+            if i > 0:
+                await asyncio.sleep(1.5)
+            query = self._combine_queries(batch, limit)
+            if not query:
+                continue
+            try:
+                resp = await self._client.post(
+                    OVERPASS_BASE,
+                    data={"data": query},
+                    headers={
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except Exception as e:
+                logger.warning("Overpass API request failed: %s", e)
+                continue
+
+            for elem in data.get("elements", []):
+                parsed = self._parse_element(elem)
+                if parsed and parsed.xid not in seen_ids:
+                    seen_ids.add(parsed.xid)
+                    places.append(parsed)
 
         return places
 
@@ -165,12 +251,16 @@ class OpenTripMapClient:
     ) -> list[str]:
         """Build Overpass QL query fragments for given interests."""
         queries: list[str] = []
+        seen: set[str] = set()
         for interest in interests:
             tag_queries = _INTEREST_TO_OVERPASS.get(interest)
             if not tag_queries:
                 tag_queries = _INTEREST_TO_OVERPASS.get("interesting_places", [])
             for tag_query in tag_queries:
-                queries.append(f"{tag_query}(around:{radius},{lat},{lon})")
+                fragment = f"{tag_query}(around:{radius},{lat},{lon})"
+                if fragment not in seen:
+                    seen.add(fragment)
+                    queries.append(fragment)
         return queries
 
     def _combine_queries(self, queries: list[str], limit: int) -> str:
@@ -178,7 +268,7 @@ class OpenTripMapClient:
         if not queries:
             return ""
         union_body = ";\n".join(queries)
-        return f"[out:json][timeout:25];\n({union_body};);\nout body {limit};"
+        return f"[out:json][timeout:60];\n({union_body};);\nout center {limit};"
 
     def _parse_element(self, elem: dict[str, Any]) -> Attraction | None:
         """Parse an Overpass element into an Attraction."""
@@ -188,7 +278,7 @@ class OpenTripMapClient:
             osm_id = elem.get("id", 0)
             xid = f"{osm_type[0].upper()}{osm_id}"
 
-            name = tags.get("name", "")
+            name = tags.get("name") or tags.get("name:en") or tags.get("alt_name") or ""
             if not name:
                 return None
 
@@ -203,16 +293,13 @@ class OpenTripMapClient:
                 return None
 
             kinds_parts: list[str] = []
-            if tags.get("tourism"):
-                kinds_parts.append(tags["tourism"])
-            if tags.get("historic"):
-                kinds_parts.append(tags["historic"])
-            if tags.get("amenity"):
-                kinds_parts.append(tags["amenity"])
-            if tags.get("natural"):
-                kinds_parts.append(tags["natural"])
-            if tags.get("leisure"):
-                kinds_parts.append(tags["leisure"])
+            for tag_key in (
+                "tourism", "historic", "amenity", "natural",
+                "leisure", "building", "shop", "tower",
+            ):
+                val = tags.get(tag_key)
+                if val:
+                    kinds_parts.append(val)
 
             addr_parts = []
             if tags.get("addr:street"):
@@ -229,7 +316,11 @@ class OpenTripMapClient:
                 location=Location(longitude=lon, latitude=lat),
                 categories=kinds_parts,
                 kinds=",".join(kinds_parts),
-                description=tags.get("description") or tags.get("wikidata"),
+                description=(
+                    tags.get("description")
+                    or tags.get("wikipedia")
+                    or tags.get("wikidata")
+                ),
                 rating=None,
             )
         except Exception:
