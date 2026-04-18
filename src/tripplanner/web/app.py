@@ -34,9 +34,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    from tripplanner.web.routers import plans, trips
+    from tripplanner.web.routers import chat, plans, trips
 
     app.include_router(trips.router, prefix="/api")
     app.include_router(plans.router, prefix="/api")
+    app.include_router(chat.router, prefix="/api")
 
     return app
