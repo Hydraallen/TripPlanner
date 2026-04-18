@@ -25,7 +25,7 @@
 | S14 | Wikipedia Enrichment | Not Started | [S14-contract.md](S14-contract.md) | 4 |
 | S15 | Testing & Demo Prep | Done | [S15-contract.md](S15-contract.md) | 4 |
 | S16 | FastAPI Scaffolding + Trip CRUD | Done | [S16-contract.md](S16-contract.md) | 5 |
-| S17 | Smart Routing + Amap + Plan API | Not Started | [S17-contract.md](S17-contract.md) | 5 |
+| S17 | Smart Routing + Amap + Plan API | Done | [S17-contract.md](S17-contract.md) | 5 |
 | S18 | LLM Integration + Chat API | Not Started | [S18-contract.md](S18-contract.md) | 5 |
 | S19 | React Scaffolding + Core Pages | Not Started | [S19-contract.md](S19-contract.md) | 5 |
 | S20 | Map Visualization + Display | Not Started | [S20-contract.md](S20-contract.md) | 5 |
