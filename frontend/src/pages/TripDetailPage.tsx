@@ -21,7 +21,11 @@ import BudgetChart from "../components/BudgetChart";
 
 const { Title, Text } = Typography;
 
-const TripDetailPage: React.FC = () => {
+interface Props {
+  onPlanContextChange?: (ctx: string | null) => void;
+}
+
+const TripDetailPage: React.FC<Props> = ({ onPlanContextChange }) => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [trip, setTrip] = useState<Trip | null>(null);
@@ -31,10 +35,17 @@ const TripDetailPage: React.FC = () => {
   useEffect(() => {
     if (!id) return;
     getTrip(id)
-      .then(setTrip)
+      .then((t) => {
+        setTrip(t);
+        if (t?.plan) {
+          const ctx = `Trip to ${t.plan.city}, ${t.plan.start_date} to ${t.plan.end_date}, ${t.plan.days.length} days`;
+          onPlanContextChange?.(ctx);
+        }
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [id]);
+    return () => onPlanContextChange?.(null);
+  }, [id, onPlanContextChange]);
 
   const handleExport = async (format: "markdown" | "json" | "html") => {
     if (!id) return;
