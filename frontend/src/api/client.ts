@@ -111,6 +111,37 @@ export interface TripSummary {
   created_at: string | null;
 }
 
+// --- Multi-Plan Types ---
+
+export type PlanFocus = "budget" | "culture" | "nature";
+
+export interface PlanScores {
+  price: number;
+  rating: number;
+  convenience: number;
+  diversity: number;
+  total: number;
+}
+
+export interface PlanAlternative {
+  id: string;
+  focus: PlanFocus;
+  title: string;
+  description: string;
+  plan: TripPlan;
+  scores: PlanScores | null;
+  estimated_cost: number;
+  source: "llm" | "algorithmic";
+}
+
+export interface GenerationProgress {
+  plan_id: string;
+  status: "collecting" | "generating" | "scoring" | "completed" | "failed";
+  progress: number;
+  step: string;
+  preview: Record<string, unknown> | null;
+}
+
 // --- API functions ---
 
 export async function listTrips(): Promise<TripSummary[]> {
@@ -138,29 +169,50 @@ export async function deleteTrip(id: string): Promise<void> {
   await api.delete(`/trips/${id}`);
 }
 
-export async function generatePlan(params: {
+export async function generateMultiPlan(params: {
   city: string;
   start_date: string;
   end_date: string;
   interests: string[];
   transport_mode: string;
+  budget?: number;
   radius?: number;
-}): Promise<TripPlan> {
+}): Promise<{ trip_id: string }> {
   const { data } = await api.post("/plans/generate", params);
   return data;
 }
 
-export async function generateLLMPlan(params: {
-  city: string;
-  start_date: string;
-  end_date: string;
-  interests: string[];
-  transport_mode: string;
-  preferences?: string;
-  radius?: number;
-}): Promise<TripPlan> {
-  const { data } = await api.post("/plans/generate-llm", params);
-  return data;
+export async function getPlanAlternatives(tripId: string): Promise<PlanAlternative[]> {
+  const { data } = await api.get(`/plans/${tripId}/plans`);
+  return data.plans ?? [];
+}
+
+export async function selectPlan(tripId: string, planId: string): Promise<void> {
+  await api.post(`/plans/${tripId}/select`, { plan_id: planId });
+}
+
+export function createProgressSSE(
+  tripId: string,
+  onProgress: (progress: GenerationProgress) => void,
+  onError?: (error: Event) => void,
+): EventSource {
+  const es = new EventSource(`/api/plans/${tripId}/progress`);
+  es.onmessage = (event) => {
+    try {
+      const progress = JSON.parse(event.data) as GenerationProgress;
+      onProgress(progress);
+      if (progress.status === "completed" || progress.status === "failed") {
+        es.close();
+      }
+    } catch {
+      // ignore parse errors
+    }
+  };
+  es.onerror = (e) => {
+    if (onError) onError(e);
+    es.close();
+  };
+  return es;
 }
 
 export async function exportTrip(

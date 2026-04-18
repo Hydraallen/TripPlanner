@@ -110,6 +110,9 @@ const TripDetailPage: React.FC<Props> = ({ onPlanContextChange }) => {
         <Button icon={<DownloadOutlined />} onClick={() => handleExport("html")}>
           HTML
         </Button>
+        <Button onClick={() => navigate(`/plan?city=${encodeURIComponent(plan.city)}`)}>
+          Switch Plan
+        </Button>
       </Space>
 
       <Row gutter={[24, 24]}>
