@@ -18,6 +18,16 @@ trap cleanup EXIT
 
 echo "=== TripPlanner ==="
 
+# Kill existing processes on our ports
+for port in "$BACKEND_PORT" "$FRONTEND_PORT"; do
+    pid=$(lsof -ti :"$port" 2>/dev/null || true)
+    if [ -n "$pid" ]; then
+        echo "Port $port in use (PID $pid), killing..."
+        kill $pid 2>/dev/null || true
+        sleep 0.5
+    fi
+done
+
 # 1) Backend
 echo "[1/3] Starting backend on :${BACKEND_PORT} ..."
 (

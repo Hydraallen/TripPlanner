@@ -4,7 +4,12 @@ import pytest
 import respx
 from httpx import Response
 
-from tripplanner.api.opentripmap import NOMINATIM_BASE, OVERPASS_BASE, OpenTripMapClient
+from tripplanner.api.opentripmap import (
+    GEOAPIFY_BASE,
+    NOMINATIM_BASE,
+    OVERPASS_MIRRORS,
+    OpenTripMapClient,
+)
 from tripplanner.core.config import Settings
 
 
@@ -86,9 +91,10 @@ class TestSearchPlaces:
     @respx.mock
     @pytest.mark.asyncio
     async def test_returns_attractions(self, client: OpenTripMapClient) -> None:
-        respx.post(OVERPASS_BASE).mock(
-            return_value=Response(200, json=self.MOCK_OVERPASS_RESPONSE)
-        )
+        for m in OVERPASS_MIRRORS:
+            respx.post(m).mock(
+                return_value=Response(200, json=self.MOCK_OVERPASS_RESPONSE)
+            )
         places = await client.search_places(35.68, 139.69, 10000)
         assert len(places) == 2
         assert places[0].xid == "N123"
@@ -98,7 +104,7 @@ class TestSearchPlaces:
     @respx.mock
     @pytest.mark.asyncio
     async def test_empty_results(self, client: OpenTripMapClient) -> None:
-        respx.post(OVERPASS_BASE).mock(
+        respx.post(OVERPASS_MIRRORS[0]).mock(
             return_value=Response(200, json={"elements": []})
         )
         places = await client.search_places(35.68, 139.69, 10000)
@@ -112,7 +118,7 @@ class TestSearchPlaces:
                 {"type": "node", "id": 999, "lat": 35.0, "lon": 139.0, "tags": {}},
             ]
         }
-        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        respx.post(OVERPASS_MIRRORS[0]).mock(return_value=Response(200, json=data))
         places = await client.search_places(35.68, 139.69, 10000)
         assert places == []
 
@@ -129,7 +135,7 @@ class TestSearchPlaces:
                 }
             ]
         }
-        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        respx.post(OVERPASS_MIRRORS[0]).mock(return_value=Response(200, json=data))
         places = await client.search_places(35.68, 139.69, 10000)
         assert len(places) == 1
         assert places[0].xid == "W789"
@@ -156,15 +162,19 @@ class TestSearchPlaces:
                 },
             ]
         }
-        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        respx.post(OVERPASS_MIRRORS[0]).mock(return_value=Response(200, json=data))
         places = await client.search_places(35.68, 139.69, 10000)
         assert len(places) == 1
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_http_error_returns_empty(self, client: OpenTripMapClient) -> None:
-        respx.post(OVERPASS_BASE).mock(
-            return_value=Response(503, text="Service Unavailable")
+        for m in OVERPASS_MIRRORS:
+            respx.post(m).mock(
+                return_value=Response(503, text="Service Unavailable")
+            )
+        respx.get("https://en.wikipedia.org/w/api.php").mock(
+            return_value=Response(200, json={"query": {"pages": {}}})
         )
         places = await client.search_places(35.68, 139.69, 10000)
         assert places == []
@@ -187,7 +197,7 @@ class TestSearchPlaces:
                 }
             ]
         }
-        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        respx.post(OVERPASS_MIRRORS[0]).mock(return_value=Response(200, json=data))
         places = await client.search_places(35.68, 139.69, 10000)
         assert len(places) == 1
         assert places[0].name == "English Name Place"
@@ -210,7 +220,7 @@ class TestSearchPlaces:
                 }
             ]
         }
-        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        respx.post(OVERPASS_MIRRORS[0]).mock(return_value=Response(200, json=data))
         places = await client.search_places(35.68, 139.69, 10000)
         assert len(places) == 1
         assert places[0].name == "Alt Name Place"
@@ -235,7 +245,7 @@ class TestSearchPlaces:
                 }
             ]
         }
-        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        respx.post(OVERPASS_MIRRORS[0]).mock(return_value=Response(200, json=data))
         places = await client.search_places(35.68, 139.69, 10000)
         assert len(places) == 1
         assert places[0].description == "en:Famous Place"
@@ -258,7 +268,7 @@ class TestSearchPlaces:
                 }
             ]
         }
-        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        respx.post(OVERPASS_MIRRORS[0]).mock(return_value=Response(200, json=data))
         places = await client.search_places(35.68, 139.69, 10000)
         assert len(places) == 1
         assert "cathedral" in places[0].categories
@@ -286,7 +296,7 @@ class TestSearchCity:
                 200, json=[{"lat": "35.6762", "lon": "139.6503"}]
             )
         )
-        overpass_route = respx.post(OVERPASS_BASE).mock(
+        overpass_route = respx.post(OVERPASS_MIRRORS[0]).mock(
             return_value=Response(
                 200,
                 json={
@@ -331,3 +341,290 @@ class TestNoApiKey:
         settings = Settings()
         client = OpenTripMapClient(settings)
         assert client._api_key_param() == {}
+
+
+# --- Fallback chain ---
+
+
+class TestFallbackChain:
+    """Test that the three-tier POI fallback works correctly."""
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_tier1_overpass_succeeds(
+        self, client: OpenTripMapClient
+    ) -> None:
+        """Tier 1 Overpass succeeds → returns immediately."""
+        overpass_route = respx.post(OVERPASS_MIRRORS[0]).mock(
+            return_value=Response(
+                200,
+                json={
+                    "elements": [
+                        {
+                            "type": "node",
+                            "id": 100,
+                            "lat": 41.88,
+                            "lon": -87.63,
+                            "tags": {
+                                "name": "Test Attraction",
+                                "tourism": "attraction",
+                            },
+                        }
+                    ]
+                },
+            )
+        )
+        geoapify_route = respx.get(GEOAPIFY_BASE).mock(
+            return_value=Response(200, json={"features": []})
+        )
+
+        places = await client.search_places_with_fallback(
+            41.88, -87.63, 10000
+        )
+        assert len(places) == 1
+        assert places[0].name == "Test Attraction"
+        assert overpass_route.called
+        assert not geoapify_route.called
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_tier1_fails_tier2_geoapify_succeeds(self) -> None:
+        """All Overpass mirrors fail → Geoapify succeeds."""
+        settings = Settings(geoapify_api_key="test-key")
+        client = OpenTripMapClient(settings)
+
+        for mirror in OVERPASS_MIRRORS:
+            respx.post(mirror).mock(
+                return_value=Response(503, text="Unavailable")
+            )
+
+        respx.get(GEOAPIFY_BASE).mock(
+            return_value=Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "properties": {
+                                "name": "Geoapify Museum",
+                                "formatted": "123 Main St",
+                                "category": "tourism.sights",
+                                "place_id": "abc123",
+                                "rank": {"importance": 0.8},
+                            },
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": [-87.63, 41.88],
+                            },
+                        }
+                    ]
+                },
+            )
+        )
+
+        places = await client.search_places_with_fallback(
+            41.88, -87.63, 10000
+        )
+        assert len(places) == 1
+        assert places[0].name == "Geoapify Museum"
+        assert places[0].xid == "Gabc123"
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_tier1_tier2_fail_tier3_wikipedia(self) -> None:
+        """Overpass + Geoapify fail → Wikipedia Geosearch succeeds."""
+        settings = Settings(geoapify_api_key="test-key")
+        client = OpenTripMapClient(settings)
+
+        for mirror in OVERPASS_MIRRORS:
+            respx.post(mirror).mock(
+                return_value=Response(504, text="Gateway Timeout")
+            )
+
+        respx.get(GEOAPIFY_BASE).mock(
+            return_value=Response(200, json={"features": []})
+        )
+
+        respx.get("https://en.wikipedia.org/w/api.php").mock(
+            return_value=Response(
+                200,
+                json={
+                    "query": {
+                        "pages": {
+                            "12345": {
+                                "pageid": 12345,
+                                "title": "Millennium Park",
+                                "length": 5000,
+                                "description": "Public park in Chicago",
+                                "fullurl": "https://en.wikipedia.org/wiki/Millennium_Park",
+                                "coordinates": [
+                                    {"lat": 41.882, "lon": -87.623}
+                                ],
+                            }
+                        }
+                    }
+                },
+            )
+        )
+
+        places = await client.search_places_with_fallback(
+            41.88, -87.63, 10000
+        )
+        assert len(places) == 1
+        assert places[0].name == "Millennium Park"
+        assert places[0].xid == "W12345"
+        assert "Public park in Chicago" in (places[0].description or "")
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_no_geoapify_key_skips_tier2(self) -> None:
+        """Without Geoapify key, skips tier 2 and goes to Wikipedia."""
+        settings = Settings(geoapify_api_key="")
+        client = OpenTripMapClient(settings)
+
+        for mirror in OVERPASS_MIRRORS:
+            respx.post(mirror).mock(
+                return_value=Response(504, text="Timeout")
+            )
+
+        respx.get("https://en.wikipedia.org/w/api.php").mock(
+            return_value=Response(
+                200,
+                json={
+                    "query": {
+                        "pages": {
+                            "99": {
+                                "pageid": 99,
+                                "title": "Test Place",
+                                "length": 2000,
+                                "coordinates": [
+                                    {"lat": 41.0, "lon": -87.0}
+                                ],
+                            }
+                        }
+                    }
+                },
+            )
+        )
+
+        places = await client.search_places_with_fallback(
+            41.0, -87.0, 10000
+        )
+        assert len(places) == 1
+        assert places[0].name == "Test Place"
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_all_fail_returns_empty(
+        self, client: OpenTripMapClient
+    ) -> None:
+        """All tiers fail → returns empty list."""
+        for mirror in OVERPASS_MIRRORS:
+            respx.post(mirror).mock(
+                return_value=Response(503, text="Unavailable")
+            )
+
+        respx.get("https://en.wikipedia.org/w/api.php").mock(
+            return_value=Response(200, json={"query": {"pages": {}}})
+        )
+
+        places = await client.search_places_with_fallback(
+            41.88, -87.63, 10000
+        )
+        assert places == []
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_wikipedia_skips_short_articles(self) -> None:
+        """Wikipedia pages with < 500 bytes are skipped."""
+        settings = Settings(geoapify_api_key="")
+        client = OpenTripMapClient(settings)
+
+        for mirror in OVERPASS_MIRRORS:
+            respx.post(mirror).mock(
+                return_value=Response(504, text="Timeout")
+            )
+
+        respx.get("https://en.wikipedia.org/w/api.php").mock(
+            return_value=Response(
+                200,
+                json={
+                    "query": {
+                        "pages": {
+                            "1": {
+                                "pageid": 1,
+                                "title": "Short Article",
+                                "length": 100,
+                                "coordinates": [
+                                    {"lat": 41.0, "lon": -87.0}
+                                ],
+                            },
+                            "2": {
+                                "pageid": 2,
+                                "title": "Real Article",
+                                "length": 5000,
+                                "coordinates": [
+                                    {"lat": 41.1, "lon": -87.1}
+                                ],
+                            },
+                        }
+                    }
+                },
+            )
+        )
+
+        places = await client.search_places_with_fallback(
+            41.0, -87.0, 10000
+        )
+        assert len(places) == 1
+        assert places[0].name == "Real Article"
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_geoapify_parse_feature(self) -> None:
+        """Geoapify feature parsing extracts correct fields."""
+        settings = Settings(geoapify_api_key="test-key")
+        client = OpenTripMapClient(settings)
+
+        for mirror in OVERPASS_MIRRORS:
+            respx.post(mirror).mock(
+                return_value=Response(504, text="Timeout")
+            )
+
+        respx.get(GEOAPIFY_BASE).mock(
+            return_value=Response(
+                200,
+                json={
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "properties": {
+                                "name": "Tower Bridge",
+                                "formatted": "Tower Bridge, London, UK",
+                                "category": "tourism.sights",
+                                "place_id": "xyz789",
+                                "rank": {"importance": 0.95},
+                            },
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": [-0.0754, 51.5055],
+                            },
+                        }
+                    ]
+                },
+            )
+        )
+
+        places = await client.search_places_with_fallback(
+            51.5055, -0.0754, 5000
+        )
+        assert len(places) == 1
+        assert places[0].name == "Tower Bridge"
+        assert places[0].xid == "Gxyz789"
+        assert places[0].score == 0.95
+        assert places[0].address == "Tower Bridge, London, UK"
+        await client.close()

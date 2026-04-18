@@ -41,12 +41,29 @@ _TRIP_PLAN_SCHEMA = (
     '"days": [{"date": "YYYY-MM-DD", "day_number": int, "transportation": "string", '
     '"description": "string", "attractions": [{"xid": "string", "name": "string", '
     '"address": "string", "location": {"longitude": float, "latitude": float}, '
-    '"kinds": "string", "visit_duration": int, "rating": float, "ticket_price": float, '
+    '"kinds": "string", "visit_duration": int, "time_slot": "HH:MM-HH:MM", '
+    '"commute_minutes": int, "rating": float, "ticket_price": float, '
     '"description": "string"}], "meals": [{"type": "string", "name": "string", '
-    '"address": "string", "estimated_cost": float}]}], '
+    '"address": "string", "estimated_cost": float, "time_slot": "HH:MM-HH:MM"}]}], '
     '"budget": {"total_attractions": float, "total_meals": float, '
     '"total_hotels": float, "total_transportation": float, "total": float}, '
     '"suggestions": ["string"]}'
+)
+
+_TIME_RULES = (
+    "\nTime scheduling rules:\n"
+    "1. Group nearby attractions to minimize backtracking.\n"
+    "2. On days with long commutes (>30 min), reduce attractions.\n"
+    "3. Museums in morning, viewpoints/parks in afternoon.\n"
+    "4. Each attraction must have time_slot as HH:MM-HH:MM.\n"
+    "5. Each attraction must have commute_minutes "
+    "(travel from previous, 0 for first).\n"
+    "6. Meal slots: breakfast 08:00-09:00, lunch 12:00-13:00, "
+    "dinner 18:00-19:00.\n"
+    "7. Do not repeat an attraction on multiple days.\n"
+    "8. Durations vary: museums ~120min, viewpoints ~45min, "
+    "parks ~60min, restaurants ~60min, monuments ~45min.\n"
+    "9. Day runs 09:00 to 19:00.\n"
 )
 
 
@@ -61,7 +78,7 @@ class LLMClient:
         self._client = httpx.AsyncClient(
             base_url=self._settings.openai_endpoint,
             headers={"Authorization": f"Bearer {self._settings.openai_api_key}"},
-            timeout=60.0,
+            timeout=300.0,
         )
 
     async def close(self) -> None:
@@ -100,13 +117,15 @@ class LLMClient:
             prompt += f"Additional preferences: {preferences}\n"
 
         prompt += (
-            "\nReturn a JSON object matching this schema:\n"
+            f"{_TIME_RULES}\n"
+            "Return a JSON object matching this schema:\n"
             '{"city": "string", "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD", '
             '"days": [{"date": "YYYY-MM-DD", "day_number": int, "transportation": "string", '
             '"attractions": [{"xid": "string", "name": "string", "address": "string", '
             '"location": {"longitude": float, "latitude": float}, "kinds": "string", '
-            '"visit_duration": int, "rating": float}], "meals": [{"type": "string", '
-            '"name": "string", "estimated_cost": float}]}], '
+            '"visit_duration": int, "time_slot": "HH:MM-HH:MM", "commute_minutes": int, '
+            '"rating": float}], "meals": [{"type": "string", '
+            '"name": "string", "estimated_cost": float, "time_slot": "HH:MM-HH:MM"}]}], '
             '"budget": {"total_attractions": float, "total_meals": float, '
             '"total_hotels": float, "total_transportation": float, "total": float}}\n'
             "Return ONLY the JSON, no markdown fences."
@@ -186,6 +205,7 @@ class LLMClient:
                 prompt += f"- {w.date}: {w.description}, {w.temp_low}-{w.temp_high}C\n"
 
         prompt += (
+            f"{_TIME_RULES}\n"
             f"\nReturn a JSON object matching this schema:\n{_TRIP_PLAN_SCHEMA}\n"
             "Return ONLY the JSON, no markdown fences."
         )
@@ -205,10 +225,25 @@ class LLMClient:
             )
             resp.raise_for_status()
             data = resp.json()
-            content = data["choices"][0]["message"]["content"].strip()
+            choice = data["choices"][0]
+            content = (choice.get("message", {}).get("content") or "").strip()
+            finish_reason = choice.get("finish_reason", "")
+            if not content:
+                logger.warning(
+                    "LLM returned empty content (finish=%s, usage=%s)",
+                    finish_reason,
+                    data.get("usage"),
+                )
+                return None
             content = _strip_json_fences(content)
             plan_data = json.loads(content)
             return TripPlan.model_validate(plan_data)
+        except json.JSONDecodeError as e:
+            logger.warning(
+                "LLM JSON parse failed (%s) at pos %d: %s\nContent snippet: %.500s",
+                focus.value, e.pos, e, content if 'content' in dir() else "N/A",
+            )
+            return None
         except Exception as e:
             logger.warning("LLM focused plan generation failed (%s): %s", focus.value, e)
             return None

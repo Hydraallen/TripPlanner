@@ -35,6 +35,11 @@ class Attraction(BaseModel):
     categories: list[str] = Field(default_factory=list)
     kinds: str = ""
     visit_duration: int = Field(default=90, gt=0, description="minutes")
+    time_slot: str = Field(default="", description="e.g. 09:00-10:30")
+    commute_minutes: int = Field(
+        default=0, ge=0,
+        description="travel time from previous attraction",
+    )
     description: str | None = None
     rating: float | None = Field(default=None, ge=0, le=5)
     ticket_price: float = Field(default=0, ge=0)
@@ -58,6 +63,7 @@ class Meal(BaseModel):
     location: Location | None = None
     description: str | None = None
     estimated_cost: float = Field(default=0, ge=0)
+    time_slot: str = Field(default="", description="e.g. 12:00-13:00")
 
 
 class Hotel(BaseModel):

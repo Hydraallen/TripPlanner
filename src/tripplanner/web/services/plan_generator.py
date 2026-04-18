@@ -20,6 +20,22 @@ from tripplanner.web.services.plan_scorer import score_plans
 
 logger = logging.getLogger(__name__)
 
+_FOCUS_PREFERRED_KINDS: dict[PlanFocus, set[str]] = {
+    PlanFocus.BUDGET: {
+        "park", "garden", "viewpoint", "monument", "memorial",
+        "attraction", "place_of_worship",
+    },
+    PlanFocus.CULTURE: {
+        "museum", "gallery", "theatre", "arts_centre",
+        "historic", "monument", "castle", "ruins",
+        "place_of_worship", "cathedral", "church", "library",
+    },
+    PlanFocus.NATURE: {
+        "park", "garden", "nature_reserve", "peak",
+        "wood", "beach", "water", "zoo",
+    },
+}
+
 _PLAN_TITLES: dict[PlanFocus, str] = {
     PlanFocus.BUDGET: "Budget-Friendly Explorer",
     PlanFocus.CULTURE: "Culture & Discovery",
@@ -184,6 +200,7 @@ class PlanGenerator:
             center=center,
             num_days=num_days,
             weather=weather,
+            focus=focus,
         )
         return plan, "algorithmic"
 
@@ -214,6 +231,7 @@ class PlanGenerator:
                 center=center,
                 num_days=num_days,
                 weather=weather,
+                focus=focus,
             )
             if plan:
                 results.append(
@@ -240,13 +258,21 @@ class PlanGenerator:
         center: tuple[float, float],
         num_days: int,
         weather: list[WeatherInfo] | None,
+        focus: PlanFocus = PlanFocus.CULTURE,
     ) -> TripPlan | None:
-        """Generate a single plan using the algorithmic pipeline."""
+        """Generate a single plan using the algorithmic pipeline.
+
+        Reorders POIs so that focus-preferred kinds appear first, giving
+        each focus variant a different set of attractions.
+        """
         if not places or not center or center == (0.0, 0.0):
             return None
 
+        preferred = _FOCUS_PREFERRED_KINDS.get(focus, set())
+        reordered = self._reorder_by_focus(places, preferred)
+
         clusters = optimize_routes(
-            places,
+            reordered,
             center=center,
             num_days=num_days,
             transport_mode=transport_mode,
@@ -258,3 +284,21 @@ class PlanGenerator:
         if weather:
             itinerary.weather = weather
         return itinerary
+
+    @staticmethod
+    def _reorder_by_focus(
+        places: list[Attraction], preferred_kinds: set[str]
+    ) -> list[Attraction]:
+        """Sort places so focus-matching kinds come first.
+
+        Within each group the original order (e.g. by score) is preserved.
+        """
+        matched: list[Attraction] = []
+        other: list[Attraction] = []
+        for p in places:
+            kinds_set = {k.strip().lower() for k in (p.kinds or "").split(",")}
+            if kinds_set & preferred_kinds:
+                matched.append(p)
+            else:
+                other.append(p)
+        return matched + other if matched else places

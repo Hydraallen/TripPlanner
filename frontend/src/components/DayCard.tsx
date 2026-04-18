@@ -1,6 +1,10 @@
 import React from "react";
 import { Card, List, Tag, Typography, Badge } from "antd";
-import { CloudOutlined } from "@ant-design/icons";
+import {
+  CloudOutlined,
+  ClockCircleOutlined,
+  CarOutlined,
+} from "@ant-design/icons";
 import type { DayPlan, WeatherInfo } from "../api/client";
 
 const { Text } = Typography;
@@ -9,6 +13,13 @@ const DAY_COLORS = [
   "#1677ff", "#52c41a", "#faad14", "#ff4d4f", "#722ed1",
   "#13c2c2", "#eb2f96", "#fa8c16", "#2f54eb", "#a0d911",
 ];
+
+const MEAL_COLORS: Record<string, string> = {
+  breakfast: "#faad14",
+  lunch: "#52c41a",
+  dinner: "#1677ff",
+  snack: "#722ed1",
+};
 
 interface Props {
   day: DayPlan;
@@ -45,7 +56,7 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
         <List
           size="small"
           dataSource={day.attractions}
-          renderItem={(a) => (
+          renderItem={(a, idx) => (
             <List.Item
               style={{ cursor: onAttractionClick ? "pointer" : undefined }}
               onClick={() => onAttractionClick?.(a.xid)}
@@ -54,8 +65,17 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
                 title={
                   <span>
                     {a.name}
+                    {a.time_slot && (
+                      <Tag
+                        icon={<ClockCircleOutlined />}
+                        color="blue"
+                        style={{ marginLeft: 8 }}
+                      >
+                        {a.time_slot}
+                      </Tag>
+                    )}
                     {a.rating && (
-                      <Tag color="blue" style={{ marginLeft: 8 }}>
+                      <Tag color="gold" style={{ marginLeft: 4 }}>
                         {a.rating.toFixed(1)}
                       </Tag>
                     )}
@@ -63,10 +83,17 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
                 }
                 description={
                   <span>
-                    {a.address || a.kinds}
-                    {a.visit_duration > 0 && (
-                      <Text type="secondary"> ({a.visit_duration} min)</Text>
+                    {a.commute_minutes > 0 && idx > 0 && (
+                      <Tag
+                        icon={<CarOutlined />}
+                        color="default"
+                        style={{ marginRight: 8 }}
+                      >
+                        {a.commute_minutes} min
+                      </Tag>
                     )}
+                    {a.address || a.kinds}
+                    <Text type="secondary"> ({a.visit_duration} min)</Text>
                   </span>
                 }
               />
@@ -76,14 +103,21 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
       )}
       {day.meals.length > 0 && (
         <div style={{ marginTop: 8 }}>
-          <Text type="secondary">Meals:</Text>
           <List
             size="small"
             dataSource={day.meals}
             renderItem={(m) => (
               <List.Item>
                 <Text>
-                  {m.type}: {m.name} (~{m.estimated_cost.toFixed(0)})
+                  <Tag color={MEAL_COLORS[m.type] || "default"}>
+                    {m.type}
+                  </Tag>
+                  {m.time_slot && (
+                    <Text type="secondary" style={{ marginRight: 8 }}>
+                      {m.time_slot}
+                    </Text>
+                  )}
+                  {m.name} (~{m.estimated_cost.toFixed(0)})
                 </Text>
               </List.Item>
             )}

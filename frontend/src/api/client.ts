@@ -32,6 +32,8 @@ export interface Attraction {
   categories: string[];
   kinds: string;
   visit_duration: number;
+  time_slot: string;
+  commute_minutes: number;
   description: string | null;
   rating: number | null;
   ticket_price: number;
@@ -43,6 +45,7 @@ export interface Meal {
   name: string;
   address: string;
   estimated_cost: number;
+  time_slot: string;
 }
 
 export interface Hotel {
