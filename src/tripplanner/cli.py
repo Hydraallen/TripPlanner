@@ -420,7 +420,7 @@ def web(host: str | None, port: int | None, dev: bool) -> None:
     bind_host = host or settings.host
     bind_port = port or settings.port
 
-    console.print(f"[bold green]Starting TripPlanner web server[/bold green]")
+    console.print("[bold green]Starting TripPlanner web server[/bold green]")
     console.print(f"  Host: {bind_host}")
     console.print(f"  Port: {bind_port}")
     console.print(f"  Docs: http://{bind_host}:{bind_port}/docs")

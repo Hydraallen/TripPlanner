@@ -15,7 +15,7 @@ _CHINESE_CITIES: set[str] = {
     "lhasa", "yinchuan", "xining", "urumqi", "baotou",
     "luoyang", "wenzhou", "foshan", "zhuhai", "zhongshan",
     "huizhou", "shantou", "quanzhou", "yantai", "weihai",
-    "nanjing", "sanya", "lijiang", "dali", "yangshuo",
+    "sanya", "lijiang", "dali", "yangshuo",
     "guilin", "zhangjiajie", "jiuquan", "dunhuang", "emeishan",
     "北京", "上海", "广州", "深圳", "成都",
     "杭州", "武汉", "西安", "重庆", "南京",

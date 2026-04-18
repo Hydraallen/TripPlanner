@@ -51,7 +51,10 @@ class WeatherClient:
             "longitude": lon,
             "start_date": str(start_date),
             "end_date": str(end_date),
-            "daily": "temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,wind_speed_10m_max",
+            "daily": (
+                "temperature_2m_max,temperature_2m_min,"
+                "precipitation_probability_max,weather_code,wind_speed_10m_max"
+            ),
             "timezone": "auto",
         }
 

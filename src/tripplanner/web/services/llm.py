@@ -4,7 +4,6 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from datetime import date
-from typing import Any
 
 import httpx
 

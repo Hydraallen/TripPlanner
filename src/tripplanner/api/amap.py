@@ -121,7 +121,9 @@ class AmapClient:
 
         lat, lon = coords
         keywords = ",".join(interests) if interests else None
-        return await self.search_pois(lat, lon, keywords, radius, self._settings.max_places_per_trip)
+        return await self.search_pois(
+            lat, lon, keywords, radius, self._settings.max_places_per_trip
+        )
 
     def _parse_poi(self, poi: dict[str, Any]) -> Attraction | None:
         """Parse a POI from Amap response."""
