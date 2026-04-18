@@ -2,7 +2,7 @@
 
 A Python full-stack travel itinerary generator. Generates personalized day-by-day travel plans with route optimization, budget estimation, and weather forecasts.
 
-Supports both CLI and web interface. Chinese destinations use Amap API; international destinations use OpenTripMap. Optional AI-powered plan generation via GLM-5.1.
+Supports both CLI and web interface. Chinese destinations use Amap API; international destinations use Overpass API (OpenStreetMap). No API key required for international cities. Optional AI-powered plan generation via GLM.
 
 ## Quick Start
 
@@ -14,9 +14,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 
-# Configure
+# Configure (optional — international cities work without any API key)
 cp .env.example .env
-# Edit .env — add OPENTRIPMAP_API_KEY (required)
 
 # Generate a trip
 tripplanner plan --city "Paris" --dates "2026-04-10 to 2026-04-13" --interests museums,food
@@ -81,7 +80,7 @@ CLI (Click)              React SPA (Vite + Ant Design + Leaflet)
   Scorer  Optimizer  Scheduler → Budget
     │
   API Clients (smart routing)
-  China: Amap │ International: OpenTripMap
+  China: Amap │ International: Overpass API (OSM)
               │
          Weather (Open-Meteo)
               │
@@ -110,19 +109,20 @@ All settings are in `.env` (see `.env.example`):
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `OPENTRIPMAP_API_KEY` | Yes | POI data for international cities |
 | `AMAP_API_KEY` | For China | POI, maps, weather for Chinese cities |
-| `OPENAI_API_KEY` | Optional | AI plan generation + chat (GLM-5.1) |
+| `OPENAI_API_KEY` | Optional | AI plan generation + chat (GLM) |
 | `OPENAI_ENDPOINT` | Optional | LLM API endpoint |
 | `DATABASE_URL` | No | Default: SQLite |
 | `HOST` / `PORT` | No | Server bind address |
+
+> International cities work out of the box — no API key needed (Overpass API + Nominatim).
 
 ## Tech Stack
 
 - **Backend:** Python 3.11+, FastAPI, SQLAlchemy 2.x (async), Pydantic 2.x
 - **Frontend:** React 18, TypeScript, Vite, Ant Design 5, React-Leaflet
 - **Database:** SQLite (default) / PostgreSQL (Docker)
-- **APIs:** OpenTripMap, Amap, Open-Meteo, Wikipedia
+- **APIs:** Overpass API (OSM), Nominatim, Amap, Open-Meteo, Wikipedia
 - **LLM:** GLM-5.1 via OpenAI-compatible API
 
 ## Development

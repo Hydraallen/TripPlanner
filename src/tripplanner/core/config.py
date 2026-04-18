@@ -2,8 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    opentripmap_api_key: str = ""
-    opentripmap_base_url: str = "https://api.opentripmap.com/0.1/en"
+    # No API key needed — uses Overpass API (OSM) + Nominatim (free)
     openmeteo_base_url: str = "https://api.open-meteo.com/v1"
     wikipedia_base_url: str = "https://en.wikipedia.org/api/rest_v1"
     database_url: str = "sqlite+aiosqlite:///./trips.db"

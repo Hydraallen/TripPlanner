@@ -111,7 +111,7 @@ async def _dry_run(city: str, interests: list[str], radius: int) -> None:
 async def _generate_plan(state: TripState, radius: int) -> TripState:
     """Run the full planning pipeline."""
     settings = get_settings()
-    with console.status("[bold green]Fetching places from OpenTripMap..."):
+    with console.status("[bold green]Fetching places from OpenStreetMap..."):
         async with OpenTripMapClient(settings) as client:
             state.city_coords = await client.geoname(state.city)
             if not state.city_coords:

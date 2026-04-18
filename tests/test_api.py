@@ -4,13 +4,13 @@ import pytest
 import respx
 from httpx import Response
 
-from tripplanner.api.opentripmap import OpenTripMapClient
+from tripplanner.api.opentripmap import NOMINATIM_BASE, OVERPASS_BASE, OpenTripMapClient
 from tripplanner.core.config import Settings
 
 
 @pytest.fixture
 def settings() -> Settings:
-    return Settings(opentripmap_api_key="test-key", opentripmap_base_url="https://api.opentripmap.com/0.1/en")
+    return Settings()
 
 
 @pytest.fixture
@@ -18,15 +18,17 @@ def client(settings: Settings) -> OpenTripMapClient:
     return OpenTripMapClient(settings)
 
 
-# --- geoname ---
+# --- geoname (Nominatim) ---
 
 
 class TestGeoname:
     @respx.mock
     @pytest.mark.asyncio
     async def test_success(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/geoname").mock(
-            return_value=Response(200, json={"lat": "35.6762", "lon": "139.6503", "name": "Tokyo"})
+        respx.get(f"{NOMINATIM_BASE}/search").mock(
+            return_value=Response(
+                200, json=[{"lat": "35.6762", "lon": "139.6503", "display_name": "Tokyo, Japan"}]
+            )
         )
         result = await client.geoname("Tokyo")
         assert result == (35.6762, 139.6503)
@@ -34,8 +36,8 @@ class TestGeoname:
     @respx.mock
     @pytest.mark.asyncio
     async def test_not_found(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/geoname").mock(
-            return_value=Response(200, json={})
+        respx.get(f"{NOMINATIM_BASE}/search").mock(
+            return_value=Response(200, json=[])
         )
         result = await client.geoname("NonexistentCityXYZ")
         assert result is None
@@ -43,37 +45,49 @@ class TestGeoname:
     @respx.mock
     @pytest.mark.asyncio
     async def test_server_error(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/geoname").mock(
+        respx.get(f"{NOMINATIM_BASE}/search").mock(
             return_value=Response(500, text="Internal Server Error")
         )
         result = await client.geoname("Tokyo")
         assert result is None
 
 
-# --- search_places ---
+# --- search_places (Overpass) ---
 
 
 class TestSearchPlaces:
-    MOCK_RADIUS_RESPONSE = [
-        {
-            "xid": "N123",
-            "name": "Tokyo Tower",
-            "point": {"lon": 139.7454, "lat": 35.6586},
-            "kinds": "towers,architecture",
-        },
-        {
-            "xid": "N456",
-            "name": "Sensoji Temple",
-            "point": {"lon": 139.7967, "lat": 35.7148},
-            "kinds": "temples,religion",
-        },
-    ]
+    MOCK_OVERPASS_RESPONSE = {
+        "elements": [
+            {
+                "type": "node",
+                "id": 123,
+                "lat": 35.6586,
+                "lon": 139.7454,
+                "tags": {
+                    "name": "Tokyo Tower",
+                    "tourism": "attraction",
+                    "tower": "observation",
+                },
+            },
+            {
+                "type": "node",
+                "id": 456,
+                "lat": 35.7148,
+                "lon": 139.7967,
+                "tags": {
+                    "name": "Sensoji Temple",
+                    "amenity": "place_of_worship",
+                    "religion": "buddhist",
+                },
+            },
+        ]
+    }
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_returns_attractions(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/radius").mock(
-            return_value=Response(200, json=self.MOCK_RADIUS_RESPONSE)
+        respx.post(OVERPASS_BASE).mock(
+            return_value=Response(200, json=self.MOCK_OVERPASS_RESPONSE)
         )
         places = await client.search_places(35.68, 139.69, 10000)
         assert len(places) == 2
@@ -84,27 +98,72 @@ class TestSearchPlaces:
     @respx.mock
     @pytest.mark.asyncio
     async def test_empty_results(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/radius").mock(
-            return_value=Response(200, json=[])
+        respx.post(OVERPASS_BASE).mock(
+            return_value=Response(200, json={"elements": []})
         )
         places = await client.search_places(35.68, 139.69, 10000)
         assert places == []
 
     @respx.mock
     @pytest.mark.asyncio
-    async def test_malformed_item_skipped(self, client: OpenTripMapClient) -> None:
-        data = self.MOCK_RADIUS_RESPONSE + [{"xid": "BAD"}]  # no name, no point
-        respx.get("https://api.opentripmap.com/0.1/en/places/radius").mock(
-            return_value=Response(200, json=data)
-        )
+    async def test_no_name_skipped(self, client: OpenTripMapClient) -> None:
+        data = {
+            "elements": [
+                {"type": "node", "id": 999, "lat": 35.0, "lon": 139.0, "tags": {}},
+            ]
+        }
+        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
         places = await client.search_places(35.68, 139.69, 10000)
-        # Items with no point get default (0,0) which is valid — so 3 results
-        assert len(places) == 3
+        assert places == []
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_way_with_center(self, client: OpenTripMapClient) -> None:
+        data = {
+            "elements": [
+                {
+                    "type": "way",
+                    "id": 789,
+                    "center": {"lat": 35.68, "lon": 139.70},
+                    "tags": {"name": "Park", "leisure": "park"},
+                }
+            ]
+        }
+        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        places = await client.search_places(35.68, 139.69, 10000)
+        assert len(places) == 1
+        assert places[0].xid == "W789"
+        assert places[0].location.latitude == 35.68
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_deduplication(self, client: OpenTripMapClient) -> None:
+        data = {
+            "elements": [
+                {
+                    "type": "node",
+                    "id": 123,
+                    "lat": 35.65,
+                    "lon": 139.74,
+                    "tags": {"name": "Tower", "tourism": "attraction"},
+                },
+                {
+                    "type": "node",
+                    "id": 123,
+                    "lat": 35.65,
+                    "lon": 139.74,
+                    "tags": {"name": "Tower", "tourism": "attraction"},
+                },
+            ]
+        }
+        respx.post(OVERPASS_BASE).mock(return_value=Response(200, json=data))
+        places = await client.search_places(35.68, 139.69, 10000)
+        assert len(places) == 1
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_http_error_returns_empty(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/radius").mock(
+        respx.post(OVERPASS_BASE).mock(
             return_value=Response(503, text="Service Unavailable")
         )
         places = await client.search_places(35.68, 139.69, 10000)
@@ -115,36 +174,9 @@ class TestSearchPlaces:
 
 
 class TestPlaceDetail:
-    @respx.mock
     @pytest.mark.asyncio
-    async def test_success(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/xid/N123").mock(
-            return_value=Response(
-                200,
-                json={
-                    "xid": "N123",
-                    "name": "Tokyo Tower",
-                    "point": {"lon": 139.7454, "lat": 35.6586},
-                    "kinds": "towers,architecture",
-                    "rate": "4.5",
-                    "address": {"road": "4 Chome-2-8 Shibakoen"},
-                    "info": {"descr": "Famous tower"},
-                },
-            )
-        )
-        place = await client.place_detail("N123")
-        assert place is not None
-        assert place.name == "Tokyo Tower"
-        assert place.rating == 4.5
-        assert place.description == "Famous tower"
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_404_returns_none(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/xid/BAD").mock(
-            return_value=Response(404, text="Not Found")
-        )
-        result = await client.place_detail("BAD")
+    async def test_returns_none(self, client: OpenTripMapClient) -> None:
+        result = await client.place_detail("N123")
         assert result is None
 
 
@@ -155,26 +187,27 @@ class TestSearchCity:
     @respx.mock
     @pytest.mark.asyncio
     async def test_full_pipeline(self, client: OpenTripMapClient) -> None:
-        geoname_route = respx.get("https://api.opentripmap.com/0.1/en/places/geoname").mock(
-            return_value=Response(200, json={"lat": "35.6762", "lon": "139.6503"})
-        )
-        radius_route = respx.get("https://api.opentripmap.com/0.1/en/places/radius").mock(
+        geoname_route = respx.get(f"{NOMINATIM_BASE}/search").mock(
             return_value=Response(
-                200,
-                json=[
-                    {"xid": "N123", "name": "Tower", "point": {"lon": 139.74, "lat": 35.65}, "kinds": "towers"},
-                ],
+                200, json=[{"lat": "35.6762", "lon": "139.6503"}]
             )
         )
-        detail_route = respx.get("https://api.opentripmap.com/0.1/en/places/xid/N123").mock(
+        overpass_route = respx.post(OVERPASS_BASE).mock(
             return_value=Response(
                 200,
                 json={
-                    "xid": "N123",
-                    "name": "Tokyo Tower",
-                    "point": {"lon": 139.7454, "lat": 35.6586},
-                    "kinds": "towers",
-                    "rate": "4",
+                    "elements": [
+                        {
+                            "type": "node",
+                            "id": 123,
+                            "lat": 35.65,
+                            "lon": 139.74,
+                            "tags": {
+                                "name": "Tokyo Tower",
+                                "tower": "observation",
+                            },
+                        }
+                    ]
                 },
             )
         )
@@ -183,25 +216,24 @@ class TestSearchCity:
         assert len(places) == 1
         assert places[0].name == "Tokyo Tower"
         assert geoname_route.called
-        assert radius_route.called
-        assert detail_route.called
+        assert overpass_route.called
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_geoname_failure_returns_empty(self, client: OpenTripMapClient) -> None:
-        respx.get("https://api.opentripmap.com/0.1/en/places/geoname").mock(
-            return_value=Response(200, json={})
+        respx.get(f"{NOMINATIM_BASE}/search").mock(
+            return_value=Response(200, json=[])
         )
         places = await client.search_city("InvalidCity", [])
         assert places == []
 
 
-# --- API key missing ---
+# --- no api key needed ---
 
 
 class TestNoApiKey:
     @pytest.mark.asyncio
-    async def test_no_api_key_warns(self) -> None:
-        settings = Settings(opentripmap_api_key="")
+    async def test_no_api_key_needed(self) -> None:
+        settings = Settings()
         client = OpenTripMapClient(settings)
         assert client._api_key_param() == {}

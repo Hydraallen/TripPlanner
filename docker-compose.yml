@@ -7,7 +7,6 @@ services:
       - "8000:8000"
     environment:
       - DATABASE_URL=postgresql+asyncpg://tripplanner:tripplanner@postgres:5432/tripplanner
-      - OPENTRIPMAP_API_KEY=${OPENTRIPMAP_API_KEY}
       - AMAP_API_KEY=${AMAP_API_KEY}
       - OPENAI_ENDPOINT=${OPENAI_ENDPOINT}
       - OPENAI_API_KEY=${OPENAI_API_KEY}

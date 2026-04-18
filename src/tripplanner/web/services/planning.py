@@ -27,7 +27,7 @@ async def generate_plan(
 ) -> TripPlan | None:
     """Generate a travel plan with smart API routing.
 
-    Detects region → dispatches to Amap or OpenTripMap → runs
+    Detects region → dispatches to Amap or Overpass API → runs
     existing logic pipeline (scorer → optimizer → scheduler → budget)
     → attaches weather data → returns TripPlan.
     """
@@ -99,7 +99,7 @@ async def _fetch_chinese(
 async def _fetch_international(
     city: str, interests: list[str], radius: int, settings: object
 ) -> tuple[list[Attraction], tuple[float, float] | None]:
-    """Fetch places from OpenTripMap for international destinations."""
+    """Fetch places from Overpass API (OSM) for international destinations."""
     from tripplanner.core.config import Settings
     s = settings if isinstance(settings, Settings) else get_settings()
 
