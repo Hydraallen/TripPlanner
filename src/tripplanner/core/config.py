@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     transit_speed_kmh: float = 25.0
     driving_speed_kmh: float = 30.0
 
+    amap_api_key: str = ""
+    amap_base_url: str = "https://restapi.amap.com"
+
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: str = "*"
