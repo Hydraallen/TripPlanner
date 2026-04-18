@@ -7,7 +7,15 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from tripplanner.core.models import Budget, DayPlan, Trip, TripPlan
+from tripplanner.core.models import (
+    Budget,
+    DayPlan,
+    PlanAlternative,
+    PlanFocus,
+    PlanScores,
+    Trip,
+    TripPlan,
+)
 from tripplanner.web.app import create_app
 from tripplanner.web.deps import get_session
 
@@ -236,26 +244,12 @@ class TestExportTrip:
         assert resp.status_code == 422
 
 
-class TestGeneratePlan:
-    def test_generate_success(self, client):
-        mock_plan = TripPlan(
-            city="Tokyo",
-            start_date=date(2026, 5, 1),
-            end_date=date(2026, 5, 3),
-            days=[
-                DayPlan(
-                    date=date(2026, 5, 1),
-                    day_number=1,
-                    attractions=[],
-                    meals=[],
-                )
-            ],
-            budget=Budget(total_attractions=500, total_meals=300, total=800),
-        )
+class TestGenerateMultiPlan:
+    def test_generate_returns_trip_id(self, client):
         with patch(
-            "tripplanner.web.routers.plans.generate_plan",
+            "tripplanner.web.routers.plans.generate_multi_plan",
             new_callable=AsyncMock,
-            return_value=mock_plan,
+            return_value="trip-abc-123",
         ):
             resp = client.post(
                 "/api/plans/generate",
@@ -269,147 +263,98 @@ class TestGeneratePlan:
             )
         assert resp.status_code == 200
         data = resp.json()
-        assert data["city"] == "Tokyo"
+        assert "trip_id" in data
+        assert data["trip_id"] == "trip-abc-123"
 
-    def test_generate_no_results(self, client):
+
+def _make_alt(plan_id: str = "plan_1", focus: PlanFocus = PlanFocus.BUDGET) -> PlanAlternative:
+    return PlanAlternative(
+        id=plan_id,
+        focus=focus,
+        title="Budget Plan",
+        plan=TripPlan(
+            city="Tokyo",
+            start_date=date(2026, 5, 1),
+            end_date=date(2026, 5, 3),
+            days=[
+                DayPlan(date=date(2026, 5, 1), day_number=1),
+            ],
+        ),
+        scores=PlanScores(price=0.8, rating=0.7, total=0.75),
+    )
+
+
+class TestGetPlans:
+    def test_get_plans_success(self, client):
+        alts = [_make_alt("plan_1"), _make_alt("plan_2", PlanFocus.CULTURE)]
         with patch(
-            "tripplanner.web.routers.plans.generate_plan",
+            "tripplanner.web.routers.plans.get_plan_alternatives",
+            new_callable=AsyncMock,
+            return_value=alts,
+        ):
+            resp = client.get("/api/plans/trip-123/plans")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "completed"
+        assert len(data["plans"]) == 2
+
+    def test_get_plans_not_found(self, client):
+        with patch(
+            "tripplanner.web.routers.plans.get_plan_alternatives",
+            new_callable=AsyncMock,
+            return_value=[],
+        ), patch(
+            "tripplanner.web.routers.plans.get_progress",
             new_callable=AsyncMock,
             return_value=None,
         ):
-            resp = client.post(
-                "/api/plans/generate",
-                json={
-                    "city": "NowhereCity",
-                    "start_date": "2026-05-01",
-                    "end_date": "2026-05-03",
-                },
-            )
-        assert resp.status_code == 200
-        assert "error" in resp.json()
+            resp = client.get("/api/plans/nonexistent/plans")
+        assert resp.status_code == 404
 
+    def test_get_plans_still_generating(self, client):
+        from tripplanner.core.models import GenerationProgress
 
-class TestGenerateLLMPlan:
-    def test_llm_fallback_when_no_key(self, client):
-        mock_plan = TripPlan(
-            city="Tokyo",
-            start_date=date(2026, 5, 1),
-            end_date=date(2026, 5, 3),
-            days=[
-                DayPlan(
-                    date=date(2026, 5, 1),
-                    day_number=1,
-                    attractions=[],
-                    meals=[],
-                )
-            ],
-            budget=Budget(total_attractions=500, total_meals=300, total=800),
-        )
-        with (
-            patch("tripplanner.web.routers.plans.get_settings") as mock_settings,
-            patch(
-                "tripplanner.web.routers.plans.generate_plan",
-                new_callable=AsyncMock,
-                return_value=mock_plan,
+        with patch(
+            "tripplanner.web.routers.plans.get_plan_alternatives",
+            new_callable=AsyncMock,
+            return_value=[],
+        ), patch(
+            "tripplanner.web.routers.plans.get_progress",
+            new_callable=AsyncMock,
+            return_value=GenerationProgress(
+                plan_id="trip-123", status="generating", progress=50, step="..."
             ),
         ):
-            s = mock_settings.return_value
-            s.openai_api_key = None
-            resp = client.post(
-                "/api/plans/generate-llm",
-                json={
-                    "city": "Tokyo",
-                    "start_date": "2026-05-01",
-                    "end_date": "2026-05-03",
-                    "preferences": "I like ramen",
-                },
-            )
+            resp = client.get("/api/plans/trip-123/plans")
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["source"] == "algorithmic"
+        assert resp.json()["status"] == "generating"
 
-    def test_llm_success(self, client):
-        mock_plan = TripPlan(
-            city="Tokyo",
-            start_date=date(2026, 5, 1),
-            end_date=date(2026, 5, 3),
-            days=[
-                DayPlan(
-                    date=date(2026, 5, 1),
-                    day_number=1,
-                    attractions=[],
-                    meals=[],
-                )
-            ],
-            budget=Budget(total_attractions=500, total_meals=300, total=800),
-        )
 
-        mock_llm = AsyncMock()
-        mock_llm.__aenter__ = AsyncMock(return_value=mock_llm)
-        mock_llm.__aexit__ = AsyncMock(return_value=None)
-        mock_llm.generate_plan = AsyncMock(return_value=mock_plan)
-
-        with (
-            patch("tripplanner.web.routers.plans.get_settings") as mock_settings,
-            patch("tripplanner.web.routers.plans.LLMClient", return_value=mock_llm),
+class TestSelectPlan:
+    def test_select_success(self, client):
+        with patch(
+            "tripplanner.web.routers.plans.db_select_plan",
+            new_callable=AsyncMock,
+            return_value=True,
         ):
-            s = mock_settings.return_value
-            s.openai_api_key = "test-key"
             resp = client.post(
-                "/api/plans/generate-llm",
-                json={
-                    "city": "Tokyo",
-                    "start_date": "2026-05-01",
-                    "end_date": "2026-05-03",
-                },
+                "/api/plans/trip-123/select",
+                json={"plan_id": "plan_2"},
             )
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["source"] == "llm"
+        assert resp.json()["plan_id"] == "plan_2"
 
-    def test_llm_failure_falls_back(self, client):
-        mock_plan = TripPlan(
-            city="Tokyo",
-            start_date=date(2026, 5, 1),
-            end_date=date(2026, 5, 3),
-            days=[
-                DayPlan(
-                    date=date(2026, 5, 1),
-                    day_number=1,
-                    attractions=[],
-                    meals=[],
-                )
-            ],
-            budget=Budget(total_attractions=500, total_meals=300, total=800),
-        )
-
-        mock_llm = AsyncMock()
-        mock_llm.__aenter__ = AsyncMock(return_value=mock_llm)
-        mock_llm.__aexit__ = AsyncMock(return_value=None)
-        mock_llm.generate_plan = AsyncMock(return_value=None)
-
-        with (
-            patch("tripplanner.web.routers.plans.get_settings") as mock_settings,
-            patch("tripplanner.web.routers.plans.LLMClient", return_value=mock_llm),
-            patch(
-                "tripplanner.web.routers.plans.generate_plan",
-                new_callable=AsyncMock,
-                return_value=mock_plan,
-            ),
+    def test_select_not_found(self, client):
+        with patch(
+            "tripplanner.web.routers.plans.db_select_plan",
+            new_callable=AsyncMock,
+            return_value=False,
         ):
-            s = mock_settings.return_value
-            s.openai_api_key = "test-key"
             resp = client.post(
-                "/api/plans/generate-llm",
-                json={
-                    "city": "Tokyo",
-                    "start_date": "2026-05-01",
-                    "end_date": "2026-05-03",
-                },
+                "/api/plans/trip-123/select",
+                json={"plan_id": "plan_99"},
             )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["source"] == "algorithmic"
+        assert resp.status_code == 404
 
 
 class TestChatEndpoint:
