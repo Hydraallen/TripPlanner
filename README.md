@@ -1,138 +1,156 @@
 # TripPlanner
 
-A Python full-stack travel itinerary generator. Generates personalized day-by-day travel plans with route optimization, budget estimation, and weather forecasts.
-
-Supports both CLI and web interface. Chinese destinations use Amap API; international destinations use Overpass API (OpenStreetMap). No API key required for international cities. Optional AI-powered multi-plan generation via GLM-5.1.
+AI-powered travel itinerary generator. Enter a city and dates, get multiple personalized day-by-day plans with route optimization, budget estimation, real-time progress, and interactive maps. No API keys required for international cities.
 
 ## Features
 
-- **Multi-plan generation** — creates up to 6 themed itineraries per trip (budget, culture, nature, food, romantic, adventure), scored on 6 dimensions so you can compare and pick the best one
-- **LLM-powered plans** — GLM-5.1 generates detailed schedules with time slots, descriptions, commute estimates, and restaurant recommendations; falls back to algorithmic pipeline when LLM is unavailable
-- **Interactive map** — Leaflet-based map showing all attractions with markers and routes
-- **AI chat** — travel advisor chatbot with context-aware suggestions based on your selected plan
-- **Smart API routing** — auto-detects Chinese destinations and switches to Amap; international cities use free Overpass API
-- **Real-time progress** — SSE-based progress tracking during plan generation
+- **Multi-plan comparison** — generates up to 6 themed itineraries per trip (budget, culture, nature, food, romantic, adventure), each scored on 6 dimensions so you can compare and pick the best one
+- **LLM-powered generation** — GLM-5.1 creates detailed schedules with time slots, commute estimates, and restaurant recommendations; falls back to an algorithmic pipeline when no LLM key is configured
+- **Interactive map** — Leaflet-based map with color-coded day routes, clickable markers linking to Google Maps and Wikipedia
+- **Transport comparison** — hover over commute times to see walking, driving, and cycling estimates via OSRM routing
+- **AI travel advisor** — context-aware chatbot that answers questions about your selected plan
+- **Real-time progress** — SSE-based progress bar during plan generation
+- **Smart API routing** — auto-detects Chinese destinations → switches to Amap; international cities use free Overpass/OSM
+- **Cross-plan deduplication** — attractions are unique across plans; no repeats
 - **Export** — download plans as Markdown, JSON, or HTML
+- **CLI + Web** — two interfaces sharing the same backend and database
 
 ## Quick Start
 
 ### Prerequisites
 
 - Python 3.11+
-- Node.js 18+ (for frontend)
+- Node.js 18+ (frontend only)
+- (Optional) An OpenAI-compatible LLM API key for AI-powered plans
 
-### Install
+### 1. Clone and install
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate    # macOS/Linux
-# Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+git clone https://github.com/Hydraallen/TripPlanner.git
+cd TripPlanner
 
-# Configure (optional — international cities work without any API key)
-cp .env.example .env
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate        # macOS/Linux
+# Windows: .venv\Scripts\activate
+
+# Install backend
+pip install -e ".[dev]"
 ```
 
-> **Note:** You must activate the virtual environment every time you open a new terminal before running `tripplanner` commands:
-> ```bash
-> source .venv/bin/activate
-> ```
-> You'll see `(.venv)` in your prompt when the environment is active.
+> You must activate the virtual environment in each new terminal session. You'll see `(.venv)` in your prompt when active.
 
-### CLI Usage
+### 2. Configure (optional)
 
 ```bash
-# Minimal — just city and dates, AI decides everything else
-tripplanner plan --city "San Francisco" --dates 2026-05-01 2026-05-03
+cp .env.example .env
+# Edit .env — only needed for Chinese cities (AMAP_API_KEY) or AI features (OPENAI_API_KEY)
+# International cities work with zero API keys
+```
 
-# Generate more plan alternatives
-tripplanner plan --city "Chicago" --dates 2026-05-01 2026-05-03 --num-plans 5
+### 3a. CLI — generate a plan in one command
 
-# Preview POIs without generating itinerary (no --dates needed)
-tripplanner plan --city "Paris" --dry-run
+```bash
+# 3-day Chicago itinerary
+tripplanner plan --city "Chicago" --dates 2026-05-01 2026-05-03
 
-# Export selected plan to file
+# 5-day Paris itinerary with 5 plan alternatives
+tripplanner plan --city "Paris" --dates 2026-06-10 2026-06-14 --num-plans 5
+
+# Preview POI data without generating a plan
+tripplanner plan --city "Tokyo" --dry-run
+
+# Export to file
 tripplanner plan --city "London" --dates 2026-07-01 2026-07-03 --export markdown --output london.md
 ```
 
-#### CLI Command Reference
+### 3b. Web — launch the full UI
+
+```bash
+# Option A: one-click launcher (starts both backend and frontend)
+./start.sh
+
+# Option B: start manually in two terminals
+# Terminal 1 — backend
+tripplanner web --dev
+
+# Terminal 2 — frontend
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 in your browser.
+
+## CLI Reference
+
+### Commands
 
 | Command | Description |
 |---------|-------------|
-| `tripplanner plan` | Generate a new trip plan |
+| `tripplanner plan` | Generate a new trip plan interactively |
 | `tripplanner list` | List all saved trips |
 | `tripplanner show <trip-id>` | Display trip details |
 | `tripplanner export <trip-id> --format <fmt>` | Export trip (markdown/json/html) |
 | `tripplanner delete <trip-id>` | Delete a saved trip |
+| `tripplanner web [--dev]` | Start the web server |
 
-#### `plan` Options
+### `plan` Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--city` | *required* | Target city name |
-| `--dates` | required | Start and end dates as two arguments (YYYY-MM-DD) |
-| `--num-plans` | 3 | Number of plan alternatives to generate (1-6) |
-| `--radius` | 10000 | Search radius in meters |
+| `--dates` | *required* | Start and end dates (YYYY-MM-DD YYYY-MM-DD) |
+| `--num-plans` | 3 | Number of plan alternatives (1–6) |
+| `--radius` | 10000 | POI search radius in meters |
 | `--dry-run` | off | Fetch POIs only, skip itinerary generation |
-| `--export` | | Export format: markdown / json / html |
+| `--export` | — | Export format: markdown / json / html |
 | `--output` | stdout | Output file path |
 
-### Web Mode
+## Web Interface
 
-```bash
-# Start backend
-tripplanner web               # production mode
-tripplanner web --dev         # development with auto-reload
-
-# Start frontend (separate terminal)
-cd frontend
-npm install
-npm run dev                   # opens at http://localhost:5173
-```
-
-The frontend proxies `/api` requests to the backend at `localhost:8000`.
-
-#### Frontend Pages
+### Pages
 
 | Route | Description |
 |-------|-------------|
-| `/` | Home — enter trip details and generate plans |
-| `/plan` | Plan generation page with real-time progress |
+| `/` | Home — hero section and trip planning form |
+| `/plan` | Plan generation with real-time progress bar |
 | `/trips` | List all saved trips |
-| `/trips/:id` | Trip detail — selected plan, map, day-by-day view, chat |
+| `/trips/:id` | Trip detail — day-by-day itinerary, interactive map, budget chart, AI chat |
 
-### Docker
+### How it works
 
-```bash
-cp .env.example .env
-docker compose up --build
-
-# Frontend: http://localhost:3000
-# Backend API docs: http://localhost:8000/docs
-```
-
-Docker uses PostgreSQL by default. Without Docker, the app falls back to SQLite (zero config).
+1. Enter city and dates on the home page (or `/plan`)
+2. Real-time progress bar tracks: collecting POIs → generating plans → scoring
+3. Compare plans side-by-side with scores, costs, and descriptions
+4. Select a plan to see the full itinerary with:
+   - **Clickable attraction names** → opens Google Maps
+   - **Wikipedia links** for attractions with wiki articles
+   - **Commute time popover** → shows walking/driving/cycling duration
+   - **Interactive map** with color-coded day routes and marker popups
+   - **Budget breakdown** chart
+5. Chat with the AI advisor about your selected plan
 
 ## API Reference
 
-API docs available at `http://localhost:8000/docs` (Swagger UI).
+Interactive docs at `http://localhost:8000/docs` (Swagger UI).
 
 ### Trips
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/trips` | List all trips |
-| POST | `/api/trips` | Create a trip (query params: city, start_date, end_date, interests, transport_mode) |
+| POST | `/api/trips` | Create a trip |
 | GET | `/api/trips/{id}` | Get trip details |
 | DELETE | `/api/trips/{id}` | Delete a trip |
-| GET | `/api/trips/{id}/export?format=` | Export (markdown / json / html) |
+| GET | `/api/trips/{id}/export?format=` | Export (markdown/json/html) |
 
 ### Plans
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/api/plans/generate` | Start multi-plan generation. Returns `trip_id` immediately; generation runs in background |
-| GET | `/api/plans/{trip_id}/progress` | SSE stream for real-time generation progress |
+| POST | `/api/plans/generate` | Start multi-plan generation (returns `trip_id` immediately) |
+| GET | `/api/plans/{trip_id}/progress` | SSE stream — real-time generation progress |
 | GET | `/api/plans/{trip_id}/plans` | Get generated plan alternatives with scores |
 | POST | `/api/plans/{trip_id}/select` | Select a plan (`{"plan_id": "plan_1"}`) |
 
@@ -143,60 +161,42 @@ API docs available at `http://localhost:8000/docs` (Swagger UI).
 | POST | `/api/chat` | Chat with travel advisor |
 | GET | `/api/chat/stream` | SSE streaming chat |
 
-### Generation Progress (SSE events)
-
-| Status | Progress | Phase |
-|--------|----------|-------|
-| `collecting` | 0–30% | Geocoding city → fetching POIs → weather forecast |
-| `generating` | 30–90% | LLM generates plan for each focus type |
-| `scoring` | 90–100% | 6-dimensional scoring and ranking |
-| `completed` | 100% | Plans ready to retrieve |
-| `failed` | 0% | Error occurred |
-
-### Example: Generate Plans via API
+### Example: Full generation flow
 
 ```bash
-# Step 1: Start generation (returns immediately)
+# 1. Start generation
 curl -X POST http://localhost:8000/api/plans/generate \
   -H "Content-Type: application/json" \
-  -d '{
-    "city": "Chicago",
-    "start_date": "2026-05-01",
-    "end_date": "2026-05-03",
-    "interests": ["museums", "food", "architecture"],
-    "transport_mode": "walking",
-    "budget": 500,
-    "num_plans": 3
-  }'
-# Response: {"trip_id": "abc-123-..."}
+  -d '{"city":"Chicago","start_date":"2026-05-01","end_date":"2026-05-03"}'
+# → {"trip_id":"abc-123-..."}
 
-# Step 2: Track progress
+# 2. Track progress (SSE)
 curl -N http://localhost:8000/api/plans/abc-123-.../progress
-# SSE events: data: {"status":"collecting","progress":20,"step":"Found 15 places in Chicago"}
-#             data: {"status":"generating","progress":50,"step":"Generating culture plan... (2/3)"}
-#             data: {"status":"completed","progress":100,"step":"Done!"}
+# data: {"status":"collecting","progress":20,"step":"Found 45 places in Chicago"}
+# data: {"status":"generating","progress":50,"step":"Generating culture plan... (2/3)"}
+# data: {"status":"completed","progress":100,"step":"Done!"}
 
-# Step 3: Get results
+# 3. Get results
 curl http://localhost:8000/api/plans/abc-123-.../plans
 
-# Step 4: Select a plan
+# 4. Select a plan
 curl -X POST http://localhost:8000/api/plans/abc-123-.../select \
   -H "Content-Type: application/json" \
-  -d '{"plan_id": "plan_2"}'
+  -d '{"plan_id":"plan_2"}'
 ```
 
 ## Plan Focus Types
 
-When generating multiple plans, each targets a different travel style:
+Each generated plan targets a different travel style:
 
 | Focus | Theme | Prioritizes |
 |-------|-------|-------------|
-| `budget` | Budget-Friendly Explorer | Free/low-cost attractions, affordable dining |
-| `culture` | Culture & Discovery | Museums, historical sites, art galleries, authentic cuisine |
-| `nature` | Nature & Relaxation | Parks, gardens, scenic viewpoints, waterfront walks |
-| `food` | Foodie's Delight | Local restaurants, food markets, cooking classes, specialty cafes |
-| `romantic` | Romantic Getaway | Sunset viewpoints, fine dining, waterfront walks, cozy cafes |
-| `adventure` | Adventure & Thrills | Outdoor activities, hiking, water sports, off-the-beaten-path |
+| `budget` | Budget-Friendly Explorer | Free attractions, affordable local dining |
+| `culture` | Culture & Discovery | Famous museums, historical landmarks, authentic cuisine |
+| `nature` | Nature & Relaxation | Parks, botanical gardens, waterfronts, scenic trails |
+| `food` | Foodie's Delight | Renowned restaurants, food markets, local specialties |
+| `romantic` | Romantic Getaway | Scenic viewpoints, fine dining, waterfront walks |
+| `adventure` | Adventure & Thrills | Outdoor activities, distinctive neighborhoods, unique experiences |
 
 ## Scoring System
 
@@ -213,74 +213,119 @@ Each plan is scored on 6 dimensions (0–1 scale):
 
 ## Configuration
 
-All settings are in `.env` (see `.env.example`):
+All settings via `.env` (see `.env.example`):
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `AMAP_API_KEY` | For China | POI, maps, weather for Chinese cities |
-| `OPENAI_API_KEY` | Optional | AI plan generation + chat (GLM-5.1) |
-| `OPENAI_ENDPOINT` | Optional | LLM API endpoint (default: GLM) |
-| `OPENAI_MODEL_NAME` | Optional | Model name (default: glm-5.1) |
-| `LLM_TEMPERATURE` | Optional | LLM temperature (default: 0.7) |
-| `LLM_MAX_TOKENS` | Optional | Max tokens per request (default: 16384) |
-| `GEOAPIFY_API_KEY` | Optional | Reverse geocoding fallback |
-| `DATABASE_URL` | No | Default: `sqlite+aiosqlite:///./trips.db` |
-| `HOST` / `PORT` | No | Server bind address (default: 0.0.0.0:8000) |
+| `AMAP_API_KEY` | Chinese cities only | POI and maps for Chinese destinations. Free at [lbs.amap.com](https://lbs.amap.com/) |
+| `OPENAI_API_KEY` | Optional | Enables AI plan generation and chat (GLM-5.1 by default) |
+| `OPENAI_ENDPOINT` | Optional | LLM API endpoint (default: `https://open.bigmodel.cn/api/coding/paas/v4`) |
+| `OPENAI_MODEL_NAME` | Optional | Model name (default: `glm-5.1`) |
+| `GEOAPIFY_API_KEY` | Optional | Reverse geocoding fallback. Free at [geoapify.com](https://www.geoapify.com/) |
+| `DATABASE_URL` | No | Default: `sqlite+aiosqlite:///./trips.db` (zero config) |
 
-> International cities work out of the box — no API key needed. POI data comes from Overpass API (OpenStreetMap) + Nominatim geocoding + Open-Meteo weather.
+> **International cities work out of the box** — no API key needed. POI data from Overpass API (OpenStreetMap), geocoding from Nominatim, weather from Open-Meteo.
 
 ## Architecture
 
 ```
-CLI (Click)                     React SPA (Vite + Ant Design + Leaflet)
-   │                                      │
-   └──────────────┬───────────────────────┘
-                  │
-             FastAPI Backend
-             /api/trips  /api/plans  /api/chat
-                  │
-        ┌─────────┼─────────────┐
-        │         │             │
-    PlanGen    Scorer      Scheduler → Budget
-    (6-focus   (6-dim)      Optimizer
-    LLM calls,
-    background)
-        │
-    API Clients (smart routing)
-    China → Amap │ International → Overpass API (OSM)
-                  │
-             Weather (Open-Meteo)
-                  │
-             LLM (GLM-5.1, optional)
-                  │
-        SQLite (default) │ PostgreSQL (Docker)
+CLI (Click)                          React SPA (Vite + Ant Design + Leaflet)
+   │                                            │
+   └─────────────────┬──────────────────────────┘
+                     │
+                FastAPI Backend
+                /api/trips  /api/plans  /api/chat
+                     │
+           ┌─────────┼─────────────┐
+           │         │             │
+       PlanGen    Scorer     Scheduler → Budget
+       (LLM per   (6-dim)    Optimizer
+        focus,
+        background task)
+           │
+       API Clients (smart routing)
+       China → Amap  │  International → Overpass (OSM)
+                       │
+                  Weather (Open-Meteo)
+                       │
+                  LLM (GLM-5.1, optional)
+                       │
+           SQLite (default)  │  PostgreSQL (Docker)
 ```
+
+### Source layout
+
+```
+src/tripplanner/
+├── core/          # Pydantic domain models, config, TripState
+├── logic/         # Pure algorithms: scorer, optimizer, scheduler, budget
+├── api/           # External API clients: Overpass, Amap, weather, Wikipedia
+├── db/            # SQLAlchemy 2.x async models, CRUD, response cache
+├── web/
+│   ├── routers/   # FastAPI endpoints: trips, plans, chat
+│   ├── services/  # Orchestration: planning, plan_generator, plan_scorer, llm, progress, region
+│   └── app.py     # FastAPI app factory
+├── export/        # Markdown/JSON/HTML formatters
+└── cli.py         # Click CLI entry point
+
+frontend/src/
+├── pages/         # Route pages (HomePage, PlanPage, TripDetailPage)
+├── components/    # MapView, DayCard, ChatPanel, TripForm, BudgetChart, PlanComparison, Layout
+├── api/           # Typed API client
+└── utils/         # Google Maps links, OSRM routing
+```
+
+### Key design decisions
+
+- **Background generation** — `POST /api/plans/generate` returns `trip_id` immediately, then runs LLM generation via `asyncio.create_task` with its own DB session. Client tracks progress via SSE.
+- **6-focus LLM plans** — each plan targets one focus. `PlanGenerator` tries LLM first, falls back to algorithmic pipeline (greedy nearest-neighbor clustering + scoring).
+- **Cross-plan dedup** — attractions are tracked across plans via prompt instructions + post-processing filter. Each plan features unique attractions.
+- **Knowledge-first LLM prompt** — the system prompt instructs the LLM to prioritize iconic landmarks from its own training data, using POI data only for coordinates and logistics.
+- **Three-tier POI fallback** — Overpass (OSM) → Geoapify → Wikipedia Geosearch. If one source fails, the next takes over.
+- **Database** — auto-creates tables on startup. SQLite by default (zero config), PostgreSQL in Docker. All access is async via SQLAlchemy 2.x.
 
 ## Tech Stack
 
-- **Backend:** Python 3.11+, FastAPI, SQLAlchemy 2.x (async), Pydantic 2.x, Click
-- **Frontend:** React 19, TypeScript, Vite 8, Ant Design 5, React-Leaflet 5
-- **Database:** SQLite (default) / PostgreSQL (Docker)
-- **APIs:** Overpass API (OSM), Nominatim, Amap, Open-Meteo, Wikipedia
-- **LLM:** GLM-5.1 via OpenAI-compatible API
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.11+, FastAPI, SQLAlchemy 2.x (async), Pydantic v2, Click |
+| Frontend | React 19, TypeScript, Vite 8, Ant Design 5, React-Leaflet 5 |
+| Database | SQLite (default) / PostgreSQL (Docker) |
+| POI Data | Overpass API (OSM), Nominatim, Amap, Geoapify, Wikipedia |
+| Routing | OSRM (demo server, no key) |
+| Weather | Open-Meteo (free) |
+| LLM | GLM-5.1 via OpenAI-compatible API |
+
+## Docker (optional)
+
+```bash
+cp .env.example .env
+docker compose up --build
+
+# Frontend: http://localhost:3000
+# Backend docs: http://localhost:8000/docs
+```
+
+Docker adds PostgreSQL and nginx. Not required for development or personal use.
 
 ## Development
 
 ```bash
-# Install with dev dependencies
-pip install -e ".[dev]"
-
 # Run tests
-pytest
+pytest                                        # all tests
+pytest tests/test_scorer.py -v                # single file
 pytest tests/test_scorer.py::test_score_attraction -v  # single test
-pytest --cov=src/tripplanner tests/                     # with coverage
+pytest --cov=src/tripplanner tests/           # with coverage
 
-# Lint
+# Lint and format
 ruff check src/
 ruff format src/
 
 # Type check
 mypy src/
+
+# Frontend type check
+cd frontend && npx tsc --noEmit
 ```
 
 ## License
