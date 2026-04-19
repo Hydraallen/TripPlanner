@@ -34,6 +34,21 @@ _FOCUS_PROMPTS: dict[PlanFocus, str] = {
         "waterfronts, hiking trails, and peaceful spots. "
         "Include leisurely pacing and outdoor dining."
     ),
+    PlanFocus.FOOD: (
+        "Focus on culinary experiences. Prioritize local restaurants, street food markets, "
+        "food tours, cooking classes, and specialty cafes. Include both high-end dining and "
+        "affordable local gems. Plan meal-centric days with food-related attractions nearby."
+    ),
+    PlanFocus.ROMANTIC: (
+        "Focus on romantic and intimate experiences. Prioritize scenic viewpoints at sunset, "
+        "fine dining restaurants, waterfront walks, botanical gardens, and cozy cafes. "
+        "Keep a relaxed pace with fewer attractions per day and more quality time."
+    ),
+    PlanFocus.ADVENTURE: (
+        "Focus on adventure and active experiences. Prioritize outdoor activities, "
+        "hiking trails, water sports, unique local experiences, and exploration of "
+        "off-the-beaten-path locations. Pack each day with exciting activities."
+    ),
 }
 
 _TRIP_PLAN_SCHEMA = (
@@ -102,6 +117,7 @@ class LLMClient:
         interests: list[str],
         transport_mode: str = "walking",
         preferences: str | None = None,
+        transport_user_specified: bool = True,
     ) -> TripPlan | None:
         """Generate a travel plan using LLM.
 
@@ -111,8 +127,15 @@ class LLMClient:
             f"Generate a detailed travel itinerary for {city} "
             f"from {start_date} to {end_date}.\n"
             f"Interests: {', '.join(interests)}\n"
-            f"Transport mode: {transport_mode}\n"
         )
+        if transport_user_specified:
+            prompt += f"Transport mode: {transport_mode}\n"
+        else:
+            prompt += (
+                "Transport mode: not specified — choose the best transport for each day "
+                "based on the plan's focus (walking, transit, driving, cycling, etc.).\n"
+                "Set 'transportation' in each day object to your recommendation.\n"
+            )
         if preferences:
             prompt += f"Additional preferences: {preferences}\n"
 
@@ -142,6 +165,7 @@ class LLMClient:
                     ],
                     "temperature": self._settings.llm_temperature,
                     "max_tokens": self._settings.llm_max_tokens,
+                    "thinking": {"type": "disabled"},
                 },
             )
             resp.raise_for_status()
@@ -163,6 +187,7 @@ class LLMClient:
         transport_mode: str = "walking",
         places: list[Attraction] | None = None,
         weather: list[WeatherInfo] | None = None,
+        transport_user_specified: bool = True,
     ) -> TripPlan | None:
         """Generate a focused travel plan using LLM with real data.
 
@@ -187,8 +212,15 @@ class LLMClient:
             f"Generate a detailed travel itinerary for {city} "
             f"from {start_date} to {end_date}.\n"
             f"Interests: {', '.join(interests)}\n"
-            f"Transport mode: {transport_mode}\n"
         )
+        if transport_user_specified:
+            prompt += f"Transport mode: {transport_mode}\n"
+        else:
+            prompt += (
+                "Transport mode: not specified — choose the best transport for each day "
+                "based on the plan's focus (walking, transit, driving, cycling, etc.).\n"
+                "Set 'transportation' in each day object to your recommendation.\n"
+            )
 
         if places:
             prompt += "\n\nAvailable places to consider (use these as reference):\n"
@@ -221,6 +253,7 @@ class LLMClient:
                     ],
                     "temperature": self._settings.llm_temperature,
                     "max_tokens": self._settings.llm_max_tokens,
+                    "thinking": {"type": "disabled"},
                 },
             )
             resp.raise_for_status()
@@ -266,6 +299,7 @@ class LLMClient:
                     "messages": [{"role": "system", "content": system_msg}] + messages,
                     "temperature": self._settings.llm_temperature,
                     "max_tokens": self._settings.llm_max_tokens,
+                    "thinking": {"type": "disabled"},
                 },
             )
             resp.raise_for_status()
@@ -293,6 +327,7 @@ class LLMClient:
                     "messages": [{"role": "system", "content": system_msg}] + messages,
                     "temperature": self._settings.llm_temperature,
                     "max_tokens": self._settings.llm_max_tokens,
+                    "thinking": {"type": "disabled"},
                     "stream": True,
                 },
             ) as resp:

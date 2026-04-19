@@ -18,7 +18,6 @@ from tripplanner.core.models import (
 from tripplanner.db.crud import (
     create_trip_draft,
     save_generated_plans,
-    update_trip_progress,
 )
 from tripplanner.web.services.llm import LLMClient
 from tripplanner.web.services.plan_generator import PlanGenerator
@@ -95,6 +94,7 @@ async def generate_multi_plan(
     budget: float | None = None,
     radius: int | None = None,
     session: AsyncSession | None = None,
+    num_plans: int = 5,
 ) -> str:
     """Orchestrate multi-plan generation with progress tracking.
 
@@ -120,29 +120,56 @@ async def generate_multi_plan(
 
         factory = await init_db(settings.database_url)
         async with factory() as sess:
-            return await generate_multi_plan(
-                city=city,
-                start_date=start_date,
-                end_date=end_date,
-                interests=interests,
-                transport_mode=transport_mode,
-                budget=budget,
-                radius=search_radius,
-                session=sess,
+            trip_id = await create_trip_draft(
+                sess, city, start_date, end_date, interests, transport_mode, budget
             )
+    else:
+        trip_id = await create_trip_draft(
+            session, city, start_date, end_date, interests, transport_mode, budget
+        )
 
-    trip_id = await create_trip_draft(
-        session, city, start_date, end_date, interests, transport_mode, budget
+    await _run_generation(
+        trip_id=trip_id,
+        city=city,
+        start_date=start_date,
+        end_date=end_date,
+        interests=interests,
+        transport_mode=transport_mode,
+        budget=budget,
+        radius=search_radius,
+        num_plans=num_plans,
     )
+    return trip_id
+
+
+async def _run_generation(
+    trip_id: str,
+    city: str,
+    start_date: date,
+    end_date: date,
+    interests: list[str],
+    transport_mode: str = "walking",
+    budget: float | None = None,
+    radius: int | None = None,
+    num_plans: int = 5,
+    transport_user_specified: bool = True,
+) -> None:
+    """Run the actual plan generation with its own DB session."""
+    settings = get_settings()
+    search_radius = radius or settings.default_search_radius
+    num_days = (end_date - start_date).days + 1
+
+    if not interests:
+        interests = ["interesting_places"]
+
+    from tripplanner.db.crud import init_db
+
+    factory = await init_db(settings.database_url)
 
     # Progress helper
     def _progress(status: str, pct: float, step: str) -> GenerationProgress:
         p = GenerationProgress(plan_id=trip_id, status=status, progress=pct, step=step)
         progress_tracker.update(p)
-        if session:
-            import asyncio
-
-            asyncio.create_task(update_trip_progress(session, trip_id, p))
         return p
 
     try:
@@ -160,7 +187,7 @@ async def generate_multi_plan(
 
         if not coords:
             _progress("failed", 0, f"Could not find city: {city}")
-            return trip_id
+            return
 
         lat, lon = coords
         _progress("collecting", 20, f"Found {len(places)} places in {city}")
@@ -176,7 +203,7 @@ async def generate_multi_plan(
             f"Data collected: {len(places)} places, {len(weather)} days weather",
         )
 
-        # Phase 2: Generate 3 plans (30-90%)
+        # Phase 2: Generate plans via LLM (30-90%)
         llm_client = LLMClient(settings) if settings.openai_api_key else None
         generator = PlanGenerator(llm=llm_client)
 
@@ -188,27 +215,28 @@ async def generate_multi_plan(
             transport_mode=transport_mode,
             places=places,
             weather=weather,
+            num_plans=num_plans,
+            transport_user_specified=transport_user_specified,
             on_progress=lambda p: _progress(p.status, p.progress, p.step),
         )
 
         if not alternatives:
             _progress("failed", 0, "Could not generate any plans")
-            return trip_id
+            return
 
         # Phase 3: Score and save (90-100%)
         _progress("scoring", 92, "Scoring and ranking plans...")
         alternatives = score_plans(alternatives)
 
         _progress("scoring", 98, "Saving plans...")
-        await save_generated_plans(session, trip_id, alternatives)
+        async with factory() as session:
+            await save_generated_plans(session, trip_id, alternatives)
 
         progress_tracker.complete(trip_id)
 
     except Exception as e:
         logger.error("Multi-plan generation failed: %s", e, exc_info=True)
         _progress("failed", 0, f"Generation failed: {e}")
-
-    return trip_id
 
 
 async def _fetch_chinese(

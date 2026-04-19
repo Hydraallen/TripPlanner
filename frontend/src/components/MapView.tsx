@@ -57,63 +57,75 @@ const MapView: React.FC<Props> = ({ days, onAttractionClick }) => {
 
   if (allAttractions.length === 0) {
     return (
-      <div style={{ height: 400, display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f5", borderRadius: 8 }}>
+      <div
+        className="map-fade-in"
+        style={{
+          height: 400,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "#f5f5f5",
+          borderRadius: 10,
+        }}
+      >
         <span style={{ color: "#999" }}>No attractions to display on map</span>
       </div>
     );
   }
 
   return (
-    <MapContainer
-      center={[35, 135]}
-      zoom={5}
-      style={{ height: 500, width: "100%", borderRadius: 8 }}
-      scrollWheelZoom
-    >
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
-      <FitBounds days={days} />
+    <div className="map-fade-in" style={{ borderRadius: 10, overflow: "hidden", boxShadow: "var(--shadow-sm)" }}>
+      <MapContainer
+        center={[35, 135]}
+        zoom={5}
+        style={{ height: 500, width: "100%" }}
+        scrollWheelZoom
+      >
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <FitBounds days={days} />
 
-      {days.map((day) => {
-        const color = DAY_COLORS[(day.day_number - 1) % DAY_COLORS.length];
-        const positions: L.LatLngTuple[] = day.attractions
-          .filter((a) => a.location.latitude && a.location.longitude)
-          .map((a) => [a.location.latitude, a.location.longitude]);
+        {days.map((day) => {
+          const color = DAY_COLORS[(day.day_number - 1) % DAY_COLORS.length];
+          const positions: L.LatLngTuple[] = day.attractions
+            .filter((a) => a.location.latitude && a.location.longitude)
+            .map((a) => [a.location.latitude, a.location.longitude]);
 
-        return (
-          <React.Fragment key={day.day_number}>
-            {day.attractions.map((a: Attraction) => (
-              <Marker
-                key={a.xid}
-                position={[a.location.latitude, a.location.longitude]}
-                icon={createDayIcon(color)}
-                eventHandlers={{
-                  click: () => onAttractionClick?.(a.xid),
-                }}
-              >
-                <Popup>
-                  <div>
-                    <strong>{a.name}</strong>
-                    {a.rating && <span> ({a.rating.toFixed(1)}/5)</span>}
-                    <br />
-                    <span style={{ color }}>Day {day.day_number}</span>
-                    {a.address && <><br /><small>{a.address}</small></>}
-                  </div>
-                </Popup>
-              </Marker>
-            ))}
-            {positions.length > 1 && (
-              <Polyline
-                positions={positions}
-                pathOptions={{ color, weight: 3, opacity: 0.7 }}
-              />
-            )}
-          </React.Fragment>
-        );
-      })}
-    </MapContainer>
+          return (
+            <React.Fragment key={day.day_number}>
+              {day.attractions.map((a: Attraction) => (
+                <Marker
+                  key={a.xid}
+                  position={[a.location.latitude, a.location.longitude]}
+                  icon={createDayIcon(color)}
+                  eventHandlers={{
+                    click: () => onAttractionClick?.(a.xid),
+                  }}
+                >
+                  <Popup>
+                    <div>
+                      <strong>{a.name}</strong>
+                      {a.rating && <span> ({a.rating.toFixed(1)}/5)</span>}
+                      <br />
+                      <span style={{ color }}>Day {day.day_number}</span>
+                      {a.address && <><br /><small>{a.address}</small></>}
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
+              {positions.length > 1 && (
+                <Polyline
+                  positions={positions}
+                  pathOptions={{ color, weight: 3, opacity: 0.7 }}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </MapContainer>
+    </div>
   );
 };
 

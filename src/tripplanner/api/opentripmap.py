@@ -271,46 +271,56 @@ class OpenTripMapClient:
         kinds: str | None,
         limit: int,
     ) -> list[Attraction]:
-        """Query a single Overpass mirror. Returns [] on failure."""
-        interest_list = kinds.split(",") if kinds else ["interesting_places"]
-        queries = self._build_overpass_queries(lat, lon, radius, interest_list)
-        if not queries:
-            return []
+        """Query a single Overpass mirror. Returns [] on failure.
 
-        batch_size = 8
-        batches = [
-            queries[i : i + batch_size]
-            for i in range(0, len(queries), batch_size)
-        ]
+        Queries each interest category separately with a fair per-category
+        limit so that high-cardinality tags (e.g. restaurants) don't drown
+        out low-cardinality ones (e.g. museums).
+        """
+        interest_list = kinds.split(",") if kinds else ["interesting_places"]
+        per_category_limit = max(limit // len(interest_list), 20)
 
         seen_ids: set[str] = set()
         places: list[Attraction] = []
 
-        for i, batch in enumerate(batches):
-            if i > 0:
-                await asyncio.sleep(1.5)
-            query = self._combine_queries(batch, limit)
-            if not query:
+        for interest in interest_list:
+            queries = self._build_overpass_queries(
+                lat, lon, radius, [interest]
+            )
+            if not queries:
                 continue
-            try:
-                resp = await self._client.post(
-                    mirror,
-                    data={"data": query},
-                    headers={
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                )
-                resp.raise_for_status()
-                data = resp.json()
-            except Exception as e:
-                logger.warning("Overpass %s failed: %s", mirror, e)
-                return []  # This mirror failed, return empty to try next
 
-            for elem in data.get("elements", []):
-                parsed = self._parse_element(elem)
-                if parsed and parsed.xid not in seen_ids:
-                    seen_ids.add(parsed.xid)
-                    places.append(parsed)
+            batch_size = 8
+            batches = [
+                queries[i : i + batch_size]
+                for i in range(0, len(queries), batch_size)
+            ]
+
+            for batch_idx, batch in enumerate(batches):
+                if places:
+                    await asyncio.sleep(1.5)
+                query = self._combine_queries(batch, per_category_limit)
+                if not query:
+                    continue
+                try:
+                    resp = await self._client.post(
+                        mirror,
+                        data={"data": query},
+                        headers={
+                            "Content-Type": "application/x-www-form-urlencoded",
+                        },
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                except Exception as e:
+                    logger.warning("Overpass %s failed: %s", mirror, e)
+                    return []
+
+                for elem in data.get("elements", []):
+                    parsed = self._parse_element(elem)
+                    if parsed and parsed.xid not in seen_ids:
+                        seen_ids.add(parsed.xid)
+                        places.append(parsed)
 
         return places
 

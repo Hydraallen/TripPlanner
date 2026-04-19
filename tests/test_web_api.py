@@ -247,9 +247,8 @@ class TestExportTrip:
 class TestGenerateMultiPlan:
     def test_generate_returns_trip_id(self, client):
         with patch(
-            "tripplanner.web.routers.plans.generate_multi_plan",
+            "tripplanner.web.routers.plans._background_generate",
             new_callable=AsyncMock,
-            return_value="trip-abc-123",
         ):
             resp = client.post(
                 "/api/plans/generate",
@@ -264,7 +263,7 @@ class TestGenerateMultiPlan:
         assert resp.status_code == 200
         data = resp.json()
         assert "trip_id" in data
-        assert data["trip_id"] == "trip-abc-123"
+        assert isinstance(data["trip_id"], str) and len(data["trip_id"]) > 0
 
 
 def _make_alt(plan_id: str = "plan_1", focus: PlanFocus = PlanFocus.BUDGET) -> PlanAlternative:

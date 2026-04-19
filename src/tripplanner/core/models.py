@@ -197,6 +197,9 @@ class PlanFocus(StrEnum):
     BUDGET = "budget"
     CULTURE = "culture"
     NATURE = "nature"
+    FOOD = "food"
+    ROMANTIC = "romantic"
+    ADVENTURE = "adventure"
 
 
 class PlanScores(BaseModel):
@@ -206,6 +209,8 @@ class PlanScores(BaseModel):
     rating: float = Field(default=0, ge=0, le=1)
     convenience: float = Field(default=0, ge=0, le=1)
     diversity: float = Field(default=0, ge=0, le=1)
+    safety: float = Field(default=0, ge=0, le=1)
+    popularity: float = Field(default=0, ge=0, le=1)
     total: float = Field(default=0, ge=0, le=1)
 
 

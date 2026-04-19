@@ -29,6 +29,8 @@ class MultiPlanRequest(BaseModel):
     transport_mode: str = "walking"
     budget: float | None = None
     radius: int | None = None
+    num_plans: int = 5
+    transport_user_specified: bool = False
 
 
 class SelectPlanRequest(BaseModel):
@@ -45,17 +47,64 @@ async def generate_plans_endpoint(
     Use GET /plans/{trip_id}/progress to track progress via SSE.
     Use GET /plans/{trip_id}/plans to get the alternatives when done.
     """
-    trip_id = await generate_multi_plan(
+    from tripplanner.db.crud import create_trip_draft
+
+    # Create draft trip quickly in this request's session
+    trip_id = await create_trip_draft(
+        session,
         city=req.city,
         start_date=req.start_date,
         end_date=req.end_date,
         interests=req.interests,
         transport_mode=req.transport_mode,
         budget=req.budget,
-        radius=req.radius,
-        session=session,
+    )
+
+    # Run the heavy generation in background (creates its own DB session)
+    asyncio.create_task(
+        _background_generate(
+            trip_id=trip_id,
+            city=req.city,
+            start_date=req.start_date,
+            end_date=req.end_date,
+            interests=req.interests,
+            transport_mode=req.transport_mode,
+            budget=req.budget,
+            radius=req.radius,
+            num_plans=min(req.num_plans, 6),
+            transport_user_specified=req.transport_user_specified,
+        )
     )
     return {"trip_id": trip_id}
+
+
+async def _background_generate(
+    trip_id: str,
+    city: str,
+    start_date: date,
+    end_date: date,
+    interests: list[str],
+    transport_mode: str = "walking",
+    budget: float | None = None,
+    radius: int | None = None,
+    num_plans: int = 5,
+    transport_user_specified: bool = True,
+) -> None:
+    """Run plan generation in background with its own DB session."""
+    from tripplanner.web.services.planning import _run_generation
+
+    await _run_generation(
+        trip_id=trip_id,
+        city=city,
+        start_date=start_date,
+        end_date=end_date,
+        interests=interests,
+        transport_mode=transport_mode,
+        budget=budget,
+        radius=radius,
+        num_plans=num_plans,
+        transport_user_specified=transport_user_specified,
+    )
 
 
 @router.get("/{trip_id}/progress")

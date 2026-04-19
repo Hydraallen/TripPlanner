@@ -116,13 +116,15 @@ export interface TripSummary {
 
 // --- Multi-Plan Types ---
 
-export type PlanFocus = "budget" | "culture" | "nature";
+export type PlanFocus = "budget" | "culture" | "nature" | "food" | "romantic" | "adventure";
 
 export interface PlanScores {
   price: number;
   rating: number;
   convenience: number;
   diversity: number;
+  safety: number;
+  popularity: number;
   total: number;
 }
 
@@ -176,10 +178,11 @@ export async function generateMultiPlan(params: {
   city: string;
   start_date: string;
   end_date: string;
-  interests: string[];
-  transport_mode: string;
+  interests?: string[];
+  transport_mode?: string;
   budget?: number;
   radius?: number;
+  num_plans?: number;
 }): Promise<{ trip_id: string }> {
   const { data } = await api.post("/plans/generate", params);
   return data;

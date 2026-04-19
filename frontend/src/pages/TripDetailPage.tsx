@@ -49,7 +49,7 @@ class TripErrorBoundary extends Component<
           message="Something went wrong displaying this trip"
           description={this.state.error?.message}
           showIcon
-          style={{ margin: 24 }}
+          style={{ margin: 24, borderRadius: 8 }}
           action={
             <Button onClick={() => window.location.reload()}>
               Reload
@@ -117,7 +117,7 @@ const TripDetailPage: React.FC<Props> = ({ onPlanContextChange }) => {
   if (error) {
     return (
       <div style={{ textAlign: "center", padding: 48 }}>
-        <Alert type="error" message={error} style={{ marginBottom: 16 }} />
+        <Alert type="error" message={error} style={{ marginBottom: 16, borderRadius: 8 }} />
         <Button onClick={() => navigate("/trips")}>Back to Trips</Button>
       </div>
     );
@@ -136,11 +136,11 @@ const TripDetailPage: React.FC<Props> = ({ onPlanContextChange }) => {
 
   return (
     <TripErrorBoundary>
-      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto" }} className="anim-fade-in">
         <Button
           icon={<ArrowLeftOutlined />}
           onClick={() => navigate("/trips")}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: 16, borderRadius: 8 }}
         >
           Back
         </Button>
@@ -153,16 +153,31 @@ const TripDetailPage: React.FC<Props> = ({ onPlanContextChange }) => {
         </Text>
 
         <Space style={{ margin: "16px 0" }}>
-          <Button icon={<DownloadOutlined />} onClick={() => handleExport("markdown")}>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => handleExport("markdown")}
+            className="export-btn"
+          >
             Markdown
           </Button>
-          <Button icon={<DownloadOutlined />} onClick={() => handleExport("json")}>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => handleExport("json")}
+            className="export-btn"
+          >
             JSON
           </Button>
-          <Button icon={<DownloadOutlined />} onClick={() => handleExport("html")}>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => handleExport("html")}
+            className="export-btn"
+          >
             HTML
           </Button>
-          <Button onClick={() => navigate(`/plan?city=${encodeURIComponent(plan.city)}`)}>
+          <Button
+            onClick={() => navigate(`/plan?city=${encodeURIComponent(plan.city)}`)}
+            className="export-btn"
+          >
             Switch Plan
           </Button>
         </Space>
@@ -181,18 +196,22 @@ const TripDetailPage: React.FC<Props> = ({ onPlanContextChange }) => {
             <div style={{ marginBottom: 16 }}>
               <BudgetChart budget={plan.budget} />
             </div>
-            {plan.days.map((day: DayPlan) => {
+            {plan.days.map((day: DayPlan, idx: number) => {
               const weather = plan.weather?.find(
                 (w) => w.date === day.date
               );
               return (
-                <DayCard
+                <div
                   key={day.day_number}
-                  day={day}
-                  weather={weather || null}
-                  selected={day.attractions.some((a) => a.xid === selectedAttraction)}
-                  onAttractionClick={setSelectedAttraction}
-                />
+                  className={`anim-slide-up stagger-${Math.min(idx + 1, 5)}`}
+                >
+                  <DayCard
+                    day={day}
+                    weather={weather || null}
+                    selected={day.attractions.some((a) => a.xid === selectedAttraction)}
+                    onAttractionClick={setSelectedAttraction}
+                  />
+                </div>
               );
             })}
           </Col>

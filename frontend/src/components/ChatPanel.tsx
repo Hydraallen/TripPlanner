@@ -74,7 +74,12 @@ const ChatPanel: React.FC<Props> = ({ planContext, externalOpen, onOpenChange, i
       />
 
       <Drawer
-        title="AI Travel Advisor"
+        title={
+          <span style={{ fontWeight: 600, fontSize: 16 }}>
+            <MessageOutlined style={{ marginRight: 8 }} />
+            AI Travel Advisor
+          </span>
+        }
         placement="right"
         width={400}
         onClose={() => setOpen(false)}
@@ -84,6 +89,7 @@ const ChatPanel: React.FC<Props> = ({ planContext, externalOpen, onOpenChange, i
             icon={<ClearOutlined />}
             size="small"
             onClick={() => setMessages([])}
+            style={{ borderRadius: 6 }}
           >
             Clear
           </Button>
@@ -105,22 +111,32 @@ const ChatPanel: React.FC<Props> = ({ planContext, externalOpen, onOpenChange, i
           )}
           <List
             dataSource={messages}
-            renderItem={(msg) => (
+            renderItem={(msg, idx) => (
               <div
+                className={msg.role === "user" ? "anim-slide-in-right" : "anim-slide-in-left"}
                 style={{
                   marginBottom: 12,
                   textAlign: msg.role === "user" ? "right" : "left",
+                  animationDelay: `${idx * 30}ms`,
                 }}
               >
                 <div
                   style={{
                     display: "inline-block",
                     maxWidth: "85%",
-                    padding: "8px 12px",
-                    borderRadius: 8,
-                    background: msg.role === "user" ? "#1677ff" : "#f0f0f0",
+                    padding: "10px 14px",
+                    borderRadius: 12,
+                    background: msg.role === "user"
+                      ? "linear-gradient(135deg, #1677ff, #722ed1)"
+                      : "#f0f0f0",
                     color: msg.role === "user" ? "white" : "inherit",
                     textAlign: "left",
+                    boxShadow: msg.role === "user"
+                      ? "0 2px 8px rgba(22, 119, 255, 0.25)"
+                      : "var(--shadow-sm)",
+                    ...(msg.role === "user"
+                      ? { borderTopRightRadius: 4 }
+                      : { borderTopLeftRadius: 4 }),
                   }}
                 >
                   {msg.role === "assistant" ? (
@@ -133,16 +149,25 @@ const ChatPanel: React.FC<Props> = ({ planContext, externalOpen, onOpenChange, i
             )}
           />
           {loading && (
-            <div style={{ textAlign: "left", marginBottom: 12 }}>
+            <div
+              className="anim-slide-in-left"
+              style={{ textAlign: "left", marginBottom: 12 }}
+            >
               <div
                 style={{
-                  display: "inline-block",
-                  padding: "8px 12px",
-                  borderRadius: 8,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "10px 14px",
+                  borderRadius: 12,
+                  borderTopLeftRadius: 4,
                   background: "#f0f0f0",
+                  boxShadow: "var(--shadow-sm)",
                 }}
               >
-                <Text type="secondary">Thinking...</Text>
+                <span className="typing-dot" />
+                <span className="typing-dot" />
+                <span className="typing-dot" />
               </div>
             </div>
           )}
@@ -155,12 +180,21 @@ const ChatPanel: React.FC<Props> = ({ planContext, externalOpen, onOpenChange, i
             onPressEnter={handleSend}
             placeholder="Ask about your trip..."
             disabled={loading}
+            style={{
+              borderRadius: "8px 0 0 8px",
+              boxShadow: "var(--shadow-sm)",
+            }}
           />
           <Button
             type="primary"
             icon={<SendOutlined />}
             onClick={handleSend}
             loading={loading}
+            style={{
+              borderRadius: "0 8px 8px 0",
+              background: "linear-gradient(135deg, #1677ff, #722ed1)",
+              border: "none",
+            }}
           />
         </Space.Compact>
       </Drawer>

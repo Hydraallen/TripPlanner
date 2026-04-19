@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from tripplanner.core.models import Attraction
 
 
@@ -20,13 +22,57 @@ def _parse_kinds(kinds: str) -> set[str]:
     return {k.strip().lower() for k in kinds.split(",") if k.strip()}
 
 
+def _extract_tag_values(overpass_selectors: list[str]) -> set[str]:
+    """Extract OSM tag values from Overpass QL selectors like 'nw["tourism"="museum"]'."""
+    values: set[str] = set()
+    for sel in overpass_selectors:
+        for m in re.findall(r'\["(\w+)"="(\w+)"\]', sel):
+            values.add(m[1].lower())
+    return values
+
+
+def _build_kind_to_interests() -> dict[str, set[str]]:
+    """Build reverse map: OSM tag value → interest keywords that include it."""
+    from tripplanner.api.opentripmap import _INTEREST_TO_OVERPASS
+
+    kind_map: dict[str, set[str]] = {}
+    for interest, selectors in _INTEREST_TO_OVERPASS.items():
+        for val in _extract_tag_values(selectors):
+            kind_map.setdefault(val, set()).add(interest)
+    return kind_map
+
+
+_KIND_TO_INTERESTS: dict[str, set[str]] | None = None
+
+
+def _get_kind_to_interests() -> dict[str, set[str]]:
+    global _KIND_TO_INTERESTS
+    if _KIND_TO_INTERESTS is None:
+        _KIND_TO_INTERESTS = _build_kind_to_interests()
+    return _KIND_TO_INTERESTS
+
+
 def _compute_category_match(place_kinds: str, interests: list[str]) -> float:
-    """Compute category match score between place kinds and user interests."""
+    """Compute category match score between place kinds and user interests.
+
+    Maps OSM tag values (e.g. "museum") back to the interest keywords
+    that would have queried them (e.g. "museums"), then computes Jaccard
+    similarity at the interest-keyword level.
+    """
     if not interests:
-        return 0.5  # neutral score when no interests specified
-    kind_set = _parse_kinds(place_kinds)
+        return 0.5
     interest_set = {i.lower() for i in interests}
-    return jaccard_similarity(kind_set, interest_set)
+
+    kind_to_interests = _get_kind_to_interests()
+    place_interests: set[str] = set()
+    for kind in _parse_kinds(place_kinds):
+        matched = kind_to_interests.get(kind)
+        if matched:
+            place_interests.update(matched)
+        else:
+            place_interests.add(kind)
+
+    return jaccard_similarity(place_interests, interest_set)
 
 
 def _mean_rating(places: list[Attraction]) -> float:

@@ -34,12 +34,27 @@ _FOCUS_PREFERRED_KINDS: dict[PlanFocus, set[str]] = {
         "park", "garden", "nature_reserve", "peak",
         "wood", "beach", "water", "zoo",
     },
+    PlanFocus.FOOD: {
+        "restaurant", "cafe", "bar", "pub", "fast_food",
+        "mall", "marketplace",
+    },
+    PlanFocus.ROMANTIC: {
+        "viewpoint", "garden", "park", "restaurant", "cafe",
+        "beach", "water", "gallery", "castle",
+    },
+    PlanFocus.ADVENTURE: {
+        "peak", "nature_reserve", "beach", "wood", "water",
+        "zoo", "park", "viewpoint",
+    },
 }
 
 _PLAN_TITLES: dict[PlanFocus, str] = {
     PlanFocus.BUDGET: "Budget-Friendly Explorer",
     PlanFocus.CULTURE: "Culture & Discovery",
     PlanFocus.NATURE: "Nature & Relaxation",
+    PlanFocus.FOOD: "Foodie's Delight",
+    PlanFocus.ROMANTIC: "Romantic Getaway",
+    PlanFocus.ADVENTURE: "Adventure & Thrills",
 }
 
 _PLAN_DESCRIPTIONS: dict[PlanFocus, str] = {
@@ -52,6 +67,18 @@ _PLAN_DESCRIPTIONS: dict[PlanFocus, str] = {
         "historical sites, and authentic cuisine."
     ),
     PlanFocus.NATURE: "Enjoy peaceful natural scenery, parks, and outdoor relaxation.",
+    PlanFocus.FOOD: (
+        "Savor local flavors with authentic cuisine, food markets, "
+        "and hidden culinary gems."
+    ),
+    PlanFocus.ROMANTIC: (
+        "Intimate experiences with scenic views, fine dining, "
+        "and leisurely moments together."
+    ),
+    PlanFocus.ADVENTURE: (
+        "Active exploration with outdoor activities and unique, "
+        "off-the-beaten-path experiences."
+    ),
 }
 
 
@@ -71,6 +98,7 @@ class PlanGenerator:
         places: list[Attraction] | None = None,
         weather: list[WeatherInfo] | None = None,
         num_plans: int = 3,
+        transport_user_specified: bool = True,
         on_progress: object = None,
     ) -> list[PlanAlternative]:
         """Generate multiple plan alternatives.
@@ -116,6 +144,7 @@ class PlanGenerator:
                 interests=interests,
                 focus=focus,
                 transport_mode=transport_mode,
+                transport_user_specified=transport_user_specified,
                 places=scored_places,
                 weather=weather,
                 center=(lat, lon),
@@ -166,6 +195,7 @@ class PlanGenerator:
         interests: list[str],
         focus: PlanFocus,
         transport_mode: str,
+        transport_user_specified: bool,
         places: list[Attraction],
         weather: list[WeatherInfo] | None,
         center: tuple[float, float],
@@ -183,6 +213,7 @@ class PlanGenerator:
                 interests=interests,
                 focus=focus,
                 transport_mode=transport_mode,
+                transport_user_specified=transport_user_specified,
                 places=places[:20],
                 weather=weather,
             )

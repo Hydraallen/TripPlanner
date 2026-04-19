@@ -1,5 +1,5 @@
 import React from "react";
-import { Card, Empty, Typography, Progress, Space } from "antd";
+import { Card, Empty, Typography, Space } from "antd";
 import type { Budget } from "../api/client";
 
 const { Title, Text } = Typography;
@@ -11,7 +11,7 @@ interface Props {
 const BudgetChart: React.FC<Props> = ({ budget }) => {
   if (!budget || budget.total === 0) {
     return (
-      <Card size="small">
+      <Card size="small" style={{ borderRadius: 10 }}>
         <Empty description="No budget data" />
       </Card>
     );
@@ -25,20 +25,37 @@ const BudgetChart: React.FC<Props> = ({ budget }) => {
   ];
 
   return (
-    <Card size="small" title="Budget Breakdown">
+    <Card
+      size="small"
+      title={<span style={{ fontWeight: 600 }}>Budget Breakdown</span>}
+      style={{ borderRadius: 10, boxShadow: "var(--shadow-sm)" }}
+    >
       <Space direction="vertical" style={{ width: "100%" }}>
         {items.map((item) => (
           <div key={item.label}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <Text>{item.label}</Text>
-              <Text strong>{item.value.toFixed(0)}</Text>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+              <Text style={{ fontSize: 13 }}>{item.label}</Text>
+              <Text strong style={{ fontSize: 13 }}>{item.value.toFixed(0)}</Text>
             </div>
-            <Progress
-              percent={budget.total > 0 ? (item.value / budget.total) * 100 : 0}
-              strokeColor={item.color}
-              showInfo={false}
-              size="small"
-            />
+            <div
+              style={{
+                height: 8,
+                borderRadius: 4,
+                background: "#f0f0f0",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                className="score-bar-fill"
+                style={{
+                  height: "100%",
+                  borderRadius: 4,
+                  background: item.color,
+                  width: `${budget.total > 0 ? (item.value / budget.total) * 100 : 0}%`,
+                  transition: "width 0.8s cubic-bezier(0.4, 0, 0.2, 1)",
+                }}
+              />
+            </div>
           </div>
         ))}
         <Title level={5} style={{ marginTop: 8, textAlign: "right" }}>

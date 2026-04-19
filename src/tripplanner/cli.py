@@ -12,7 +12,6 @@ from rich.table import Table
 
 from tripplanner.api.opentripmap import OpenTripMapClient
 from tripplanner.core.config import get_settings
-from tripplanner.core.state import TripState
 from tripplanner.db.crud import (
     delete_trip as db_delete,
 )
@@ -31,10 +30,7 @@ from tripplanner.db.crud import (
 from tripplanner.export.html_gen import export_html
 from tripplanner.export.json_export import export_json
 from tripplanner.export.markdown import export_markdown
-from tripplanner.logic.budget import calculate_budget
-from tripplanner.logic.optimizer import haversine, optimize_routes
-from tripplanner.logic.scheduler import build_itinerary
-from tripplanner.logic.scorer import compute_scores
+from tripplanner.logic.optimizer import haversine
 
 console = Console()
 
@@ -108,54 +104,45 @@ async def _dry_run(city: str, interests: list[str], radius: int) -> None:
     console.print(table)
 
 
-async def _generate_plan(state: TripState, radius: int) -> TripState:
-    """Run the full planning pipeline."""
-    settings = get_settings()
-    with console.status("[bold green]Fetching places from OpenStreetMap..."):
-        async with OpenTripMapClient(settings) as client:
-            state.city_coords = await client.geoname(state.city)
-            if not state.city_coords:
-                return state
+def _display_plan_comparison(
+    alternatives: list[Any], city: str, start: date, end: date
+) -> None:
+    """Display a comparison table of all plan alternatives."""
+    console.print(f"\n[bold cyan]{city} Trip Plans[/bold cyan]")
+    console.print(f"[dim]{start} — {end}[/dim]\n")
 
-            lat, lon = state.city_coords
-            state.raw_places = await client.search_city(
-                state.city, state.interests, radius
-            )
+    table = Table(title="Plan Comparison", show_lines=True)
+    table.add_column("#", style="dim", width=3)
+    table.add_column("Focus", style="cyan")
+    table.add_column("Title", style="bold")
+    table.add_column("Score", justify="right", style="green")
+    table.add_column("Cost", justify="right", style="yellow")
+    table.add_column("Transport", style="magenta")
+    table.add_column("Attractions", justify="right")
 
-    if not state.raw_places:
-        return state
+    for i, alt in enumerate(alternatives, 1):
+        plan = alt.plan
+        total_cost = plan.budget.total if plan.budget else 0
+        total_attr = sum(len(d.attractions) for d in plan.days)
+        transport = plan.days[0].transportation if plan.days else "-"
+        score = f"{alt.scores.total:.2f}" if alt.scores else "N/A"
+        best = " [green]*[/green]" if i == 1 else ""
+        table.add_row(
+            str(i),
+            alt.focus.value,
+            alt.title + best,
+            score,
+            f"{total_cost:.0f}",
+            transport,
+            str(total_attr),
+        )
 
-    state.scored_places = compute_scores(state.raw_places, state.interests)
-
-    num_days = (state.end_date - state.start_date).days + 1
-    state.optimized_clusters = optimize_routes(
-        state.scored_places,
-        center=(lat, lon),
-        num_days=num_days,
-        transport_mode=state.transport_mode,
-    )
-
-    state.itinerary = build_itinerary(
-        state.optimized_clusters,
-        state.start_date,
-        state.end_date,
-        state.transport_mode,
-    )
-    state.itinerary.city = state.city
-
-    budget = calculate_budget(state.itinerary, state.transport_mode)
-    state.itinerary.budget = budget
-
-    return state
+    console.print(table)
+    console.print("[dim]  * = highest scored plan[/dim]\n")
 
 
-def _display_itinerary(state: TripState) -> None:
-    """Display the generated itinerary with Rich formatting."""
-    plan = state.itinerary
-    if not plan:
-        console.print(f"[red]Could not generate itinerary for {state.city}.[/red]")
-        return
-
+def _display_single_plan(plan: Any) -> None:
+    """Display a single plan's detailed itinerary."""
     console.print(f"\n[bold cyan]{plan.city} Trip Plan[/bold cyan]")
     console.print(f"[dim]{plan.start_date} — {plan.end_date}[/dim]\n")
 
@@ -180,12 +167,36 @@ def _display_itinerary(state: TripState) -> None:
 
     for day in plan.days:
         console.print(f"[bold]Day {day.day_number} — {day.date}[/bold]")
+        if day.transportation:
+            console.print(f"  [dim]Transport: {day.transportation}[/dim]")
         for a in day.attractions:
             rating_str = f" ({a.rating:.1f}/5)" if a.rating else ""
-            console.print(f"  - {a.name}{rating_str}")
+            time_str = f" [{a.time_slot}]" if a.time_slot else ""
+            console.print(f"  - {a.name}{rating_str}{time_str}")
         for m in day.meals:
             console.print(f"  [dim]{m.type}: {m.name} (~{m.estimated_cost:.0f})[/dim]")
         console.print()
+
+
+def _interactive_select(alternatives: list[Any]) -> int:
+    """Prompt user to select a plan. Returns 0-based index."""
+    console.print("[bold]Select a plan:[/bold]")
+    for i, alt in enumerate(alternatives, 1):
+        score = f" (score: {alt.scores.total:.2f})" if alt.scores else ""
+        console.print(f"  {i}. {alt.title} — {alt.focus.value}{score}")
+    console.print()
+
+    while True:
+        choice = click.prompt("Enter plan number (Enter = 1)", default="1", show_default=False)
+        if not choice.strip():
+            return 0
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(alternatives):
+                return idx
+        except ValueError:
+            pass
+        console.print(f"[red]Please enter a number between 1 and {len(alternatives)}[/red]")
 
 
 @click.group()
@@ -194,7 +205,6 @@ def cli() -> None:
     """TripPlanner — generate personalized travel itineraries."""
 
 
-TRANSPORT_CHOICES = click.Choice(["walking", "transit", "driving"])
 EXPORT_CHOICES = click.Choice(["markdown", "json", "html"])
 
 
@@ -203,11 +213,7 @@ EXPORT_CHOICES = click.Choice(["markdown", "json", "html"])
 @click.option(
     "--dates", nargs=2, type=str, default=None, help="Start and end dates (YYYY-MM-DD)"
 )
-@click.option("--days", type=int, default=3, help="Number of days (default: 3)")
-@click.option(
-    "--interests", default="interesting_places", help="Comma-separated interest tags"
-)
-@click.option("--transport", type=TRANSPORT_CHOICES, default="walking")
+@click.option("--num-plans", type=int, default=3, help="Number of plan alternatives (1-6)")
 @click.option("--radius", type=int, default=None, help="Search radius in meters")
 @click.option(
     "--dry-run", is_flag=True, help="Fetch and display POIs without generating itinerary"
@@ -217,68 +223,90 @@ EXPORT_CHOICES = click.Choice(["markdown", "json", "html"])
 def plan(
     city: str,
     dates: tuple[str, str] | None,
-    days: int,
-    interests: str,
-    transport: str,
+    num_plans: int,
     radius: int | None,
     dry_run: bool,
     export_fmt: str | None,
     output: str | None,
 ) -> None:
-    """Plan a new trip."""
+    """Plan a new trip with AI-generated alternatives."""
     settings = get_settings()
+    num_plans = max(1, min(num_plans, 6))
 
-    if dates:
-        start = _parse_date(dates[0])
-        end = _parse_date(dates[1])
-        if end < start:
-            raise click.BadParameter("End date must be after start date.")
-    else:
-        start = date.today() + timedelta(days=1)
-        end = start + timedelta(days=days - 1)
-
-    interest_list = [i.strip() for i in interests.split(",")]
     search_radius = radius or settings.default_search_radius
 
     if dry_run:
-        _run_async(_dry_run(city, interest_list, search_radius))
+        _run_async(_dry_run(city, ["interesting_places"], search_radius))
         return
 
-    state = TripState(city, start, end, interest_list, transport)
-    _run_async(_generate_plan(state, search_radius))
-    _display_itinerary(state)
+    if not dates:
+        raise click.BadParameter("--dates is required (unless using --dry-run)")
 
-    if state.itinerary:
-        # Save to database
-        async def _save():
-            factory = await _get_session()
-            async with factory() as session:
-                from tripplanner.core.models import Trip
-                trip = Trip(
-                    id=str(uuid.uuid4()),
-                    city=city,
-                    start_date=start,
-                    end_date=end,
-                    interests=interest_list,
-                    transport_mode=transport,
-                    plan=state.itinerary,
-                    created_at=datetime.now(),
-                )
-                trip_id = await db_save(session, trip)
-                return trip_id
+    start = _parse_date(dates[0])
+    end = _parse_date(dates[1])
+    if end < start:
+        raise click.BadParameter("End date must be after start date.")
 
-        trip_id = _run_async(_save())
-        console.print(f"[dim]Saved as trip ID: {trip_id}[/dim]")
+    # Use the multi-plan generation pipeline (same as web)
+    with console.status("[bold green]Generating trip plans...[/bold green]"):
+        from tripplanner.web.services.planning import generate_multi_plan
 
-        # Export if requested
-        if export_fmt:
-            content = _export_content(state.itinerary, export_fmt)
-            if output:
-                with open(output, "w") as f:
-                    f.write(content)
-                console.print(f"[green]Exported to {output}[/green]")
-            else:
-                console.print(content)
+        trip_id = _run_async(
+            generate_multi_plan(
+                city=city,
+                start_date=start,
+                end_date=end,
+                interests=["interesting_places"],
+                transport_mode="walking",
+                radius=search_radius,
+                num_plans=num_plans,
+            )
+        )
+
+    # Load generated plans from DB
+    async def _load_plans():
+        from tripplanner.db.crud import get_plan_alternatives as db_get_alts
+        factory = await _get_session()
+        async with factory() as session:
+            return await db_get_alts(session, trip_id)
+
+    alternatives = _run_async(_load_plans())
+
+    if not alternatives:
+        console.print(f"[red]Could not generate plans for {city}.[/red]")
+        return
+
+    _display_plan_comparison(alternatives, city, start, end)
+
+    if len(alternatives) == 1:
+        selected_idx = 0
+    else:
+        selected_idx = _interactive_select(alternatives)
+
+    chosen = alternatives[selected_idx]
+    plan_obj = chosen.plan
+
+    # Mark selected plan in DB
+    async def _select():
+        from tripplanner.db.crud import select_plan as db_select
+        factory = await _get_session()
+        async with factory() as session:
+            await db_select(session, trip_id, chosen.id)
+
+    _run_async(_select())
+
+    console.print(f"\n[bold green]Selected: {chosen.title}[/bold green]")
+    _display_single_plan(plan_obj)
+
+    # Export if requested
+    if export_fmt:
+        content = _export_content(plan_obj, export_fmt)
+        if output:
+            with open(output, "w") as f:
+                f.write(content)
+            console.print(f"[green]Exported to {output}[/green]")
+        else:
+            console.print(content)
 
 
 def _export_content(plan: Any, fmt: str) -> str:

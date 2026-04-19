@@ -20,7 +20,7 @@ from tripplanner.web.services.plan_scorer import score_plan, score_plans
 def _make_attraction(
     name: str = "Museum",
     rating: float | None = 4.0,
-    kinds: str = "museums",
+    kinds: str = "museum",
     cost: float = 0,
 ) -> Attraction:
     return Attraction(
@@ -80,6 +80,8 @@ class TestScorePlan:
         assert isinstance(scores, PlanScores)
         assert 0 <= scores.total <= 1
         assert scores.rating > 0
+        assert scores.safety > 0
+        assert scores.popularity > 0
 
     def test_no_budget(self) -> None:
         alt = _make_alt(_make_plan(budget_total=0))
@@ -121,17 +123,44 @@ class TestScorePlan:
         assert scores.convenience < 1.0
 
     def test_diversity_many_categories(self) -> None:
-        kinds = ["museums", "parks", "churches", "restaurants", "gardens"]
+        kinds = ["museum", "park", "church", "restaurant", "garden"]
         attractions = [_make_attraction(name=f"P{i}", kinds=k) for i, k in enumerate(kinds)]
         alt = _make_alt(_make_plan(attractions=attractions))
         scores = score_plan(alt, days=1)
         assert scores.diversity > 0.3
 
     def test_diversity_single_category(self) -> None:
-        attractions = [_make_attraction(kinds="museums") for _ in range(3)]
+        attractions = [_make_attraction(kinds="museum") for _ in range(3)]
         alt = _make_alt(_make_plan(attractions=attractions))
         scores = score_plan(alt, days=1)
         assert scores.diversity < 0.3
+
+    def test_safety_daytime_venues(self) -> None:
+        attractions = [_make_attraction(kinds="museum"), _make_attraction(kinds="gallery")]
+        alt = _make_alt(_make_plan(attractions=attractions))
+        scores = score_plan(alt, days=1)
+        assert scores.safety >= 0.9
+
+    def test_safety_nightlife(self) -> None:
+        attractions = [_make_attraction(kinds="nightclub"), _make_attraction(kinds="bar")]
+        alt = _make_alt(_make_plan(attractions=attractions))
+        scores = score_plan(alt, days=1)
+        assert scores.safety < 0.7
+
+    def test_popularity_full_day(self) -> None:
+        attractions = [_make_attraction() for _ in range(4)]
+        alt = _make_alt(_make_plan(attractions=attractions))
+        scores = score_plan(alt, days=1)
+        assert scores.popularity > 0.5
+
+    def test_popularity_empty_plan(self) -> None:
+        # Pass a dummy attraction list that won't be truthy-tested away
+        plan = _make_plan(attractions=[_make_attraction(kinds="museum")])
+        # Manually empty attractions for this test
+        plan.days[0].attractions = []
+        alt = _make_alt(plan)
+        scores = score_plan(alt, days=1)
+        assert scores.popularity == 0.0
 
 
 # --- score_plans ---
@@ -157,3 +186,8 @@ class TestScorePlans:
         results = score_plans([alt])
         assert results[0].id == "plan_1"
         assert results[0].focus == PlanFocus.BUDGET
+
+    def test_new_focuses_in_enum(self) -> None:
+        assert PlanFocus.FOOD == "food"
+        assert PlanFocus.ROMANTIC == "romantic"
+        assert PlanFocus.ADVENTURE == "adventure"

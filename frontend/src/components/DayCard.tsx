@@ -38,17 +38,19 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
         marginBottom: 12,
         borderLeft: `4px solid ${color}`,
         background: selected ? "#f0f5ff" : undefined,
+        borderRadius: 10,
+        boxShadow: "var(--shadow-sm)",
       }}
       title={
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Badge color={color} />
-          <span>Day {day.day_number} — {day.date}</span>
+          <span style={{ fontWeight: 600 }}>Day {day.day_number} — {day.date}</span>
           {weather && (
-            <Tag icon={<CloudOutlined />} style={{ marginLeft: "auto" }}>
+            <Tag icon={<CloudOutlined />} style={{ marginLeft: "auto", borderRadius: 6 }}>
               {weather.temp_low.toFixed(0)}–{weather.temp_high.toFixed(0)}°C
             </Tag>
           )}
-          <Tag>{day.transportation}</Tag>
+          <Tag style={{ borderRadius: 6 }}>{day.transportation}</Tag>
         </div>
       }
     >
@@ -58,7 +60,13 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
           dataSource={day.attractions}
           renderItem={(a, idx) => (
             <List.Item
-              style={{ cursor: onAttractionClick ? "pointer" : undefined }}
+              className="anim-slide-in-left"
+              style={{
+                cursor: onAttractionClick ? "pointer" : undefined,
+                animationDelay: `${idx * 60}ms`,
+                borderRadius: 6,
+                padding: "8px 12px",
+              }}
               onClick={() => onAttractionClick?.(a.xid)}
             >
               <List.Item.Meta
@@ -69,13 +77,13 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
                       <Tag
                         icon={<ClockCircleOutlined />}
                         color="blue"
-                        style={{ marginLeft: 8 }}
+                        style={{ marginLeft: 8, borderRadius: 6 }}
                       >
                         {a.time_slot}
                       </Tag>
                     )}
                     {a.rating && (
-                      <Tag color="gold" style={{ marginLeft: 4 }}>
+                      <Tag color="gold" style={{ marginLeft: 4, borderRadius: 6 }}>
                         {a.rating.toFixed(1)}
                       </Tag>
                     )}
@@ -87,7 +95,7 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
                       <Tag
                         icon={<CarOutlined />}
                         color="default"
-                        style={{ marginRight: 8 }}
+                        style={{ marginRight: 8, borderRadius: 6 }}
                       >
                         {a.commute_minutes} min
                       </Tag>
@@ -106,10 +114,13 @@ const DayCard: React.FC<Props> = ({ day, weather, selected, onAttractionClick })
           <List
             size="small"
             dataSource={day.meals}
-            renderItem={(m) => (
-              <List.Item>
+            renderItem={(m, idx) => (
+              <List.Item
+                className="anim-slide-in-left"
+                style={{ animationDelay: `${idx * 60}ms`, borderRadius: 6, padding: "6px 12px" }}
+              >
                 <Text>
-                  <Tag color={MEAL_COLORS[m.type] || "default"}>
+                  <Tag color={MEAL_COLORS[m.type] || "default"} style={{ borderRadius: 6 }}>
                     {m.type}
                   </Tag>
                   {m.time_slot && (

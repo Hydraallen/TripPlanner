@@ -55,13 +55,17 @@ const PlanPage: React.FC = () => {
       esRef.current.close();
     }
 
-    const params = {
+    const params: Record<string, unknown> = {
       city: values.city,
       start_date: values.startDate.format("YYYY-MM-DD"),
       end_date: values.endDate.format("YYYY-MM-DD"),
-      interests: values.interests,
-      transport_mode: values.transportMode,
     };
+    if (values.interests && values.interests.length > 0) {
+      params.interests = values.interests;
+    }
+    if (values.transportMode) {
+      params.transport_mode = values.transportMode;
+    }
 
     try {
       const { trip_id } = await generateMultiPlan(params);
@@ -118,12 +122,12 @@ const PlanPage: React.FC = () => {
     const summary = alternatives
       .map((alt) => {
         const scoreStr = alt.scores
-          ? `Score: ${Math.round((alt.scores.total ?? 0) * 100)} (Price:${Math.round((alt.scores.price ?? 0) * 100)} Rating:${Math.round((alt.scores.rating ?? 0) * 100)} Convenience:${Math.round((alt.scores.convenience ?? 0) * 100)} Diversity:${Math.round((alt.scores.diversity ?? 0) * 100)})`
+          ? `Score: ${Math.round((alt.scores.total ?? 0) * 100)} (Price:${Math.round((alt.scores.price ?? 0) * 100)} Rating:${Math.round((alt.scores.rating ?? 0) * 100)} Convenience:${Math.round((alt.scores.convenience ?? 0) * 100)} Diversity:${Math.round((alt.scores.diversity ?? 0) * 100)} Safety:${Math.round((alt.scores.safety ?? 0) * 100)} Popularity:${Math.round((alt.scores.popularity ?? 0) * 100)})`
           : "No scores";
         return `- ${alt.title} (${alt.focus}): ${alt.description || "No description"}. Cost: ¥${alt.estimated_cost}. ${scoreStr}`;
       })
       .join("\n");
-    setPlansContext(`I'm comparing these 3 travel plans:\n${summary}\n\nPlease help me compare them and recommend the best one.`);
+    setPlansContext(`I'm comparing these travel plans:\n${summary}\n\nPlease help me compare them and recommend the best one.`);
     setChatOpen(true);
   };
 
@@ -149,18 +153,43 @@ const PlanPage: React.FC = () => {
 
       {/* Generation Progress */}
       {loading && !isCompleted && (
-        <Card style={{ textAlign: "center", padding: 40, marginBottom: 24 }}>
+        <Card
+          className="anim-fade-in"
+          style={{
+            textAlign: "center",
+            padding: 40,
+            marginBottom: 24,
+            borderRadius: 12,
+            boxShadow: "var(--shadow-md)",
+          }}
+        >
           <Spin size="large" indicator={<RocketOutlined style={{ fontSize: 36 }} />} />
           <div style={{ marginTop: 16, marginBottom: 12 }}>
             <Text type="secondary" style={{ fontSize: 16 }}>
               {progress?.step || "Starting generation..."}
             </Text>
           </div>
-          <Progress
-            percent={progressPercent}
-            status={isFailed ? "exception" : "active"}
-            style={{ maxWidth: 400, margin: "0 auto" }}
-          />
+          <div style={{ maxWidth: 400, margin: "0 auto" }}>
+            <Progress
+              percent={progressPercent}
+              status={isFailed ? "exception" : "active"}
+              strokeColor={{
+                "0%": "#1677ff",
+                "50%": "#52c41a",
+                "100%": "#faad14",
+              }}
+              style={{ marginBottom: 8 }}
+            />
+            {isCompleted && (
+              <CheckCircleOutlined
+                style={{
+                  fontSize: 24,
+                  color: "#52c41a",
+                  animation: "bounceIn 0.5s ease both",
+                }}
+              />
+            )}
+          </div>
         </Card>
       )}
 
@@ -171,13 +200,13 @@ const PlanPage: React.FC = () => {
           description={error}
           closable
           onClose={() => setError(null)}
-          style={{ marginBottom: 24 }}
+          style={{ marginBottom: 24, borderRadius: 8 }}
         />
       )}
 
       {/* Plan Comparison */}
       {alternatives.length > 0 && (
-        <div style={{ marginBottom: 24 }}>
+        <div style={{ marginBottom: 24 }} className="anim-fade-in">
           <Title level={3}>
             <CheckCircleOutlined style={{ color: "#52c41a" }} /> Choose Your Plan
           </Title>
@@ -189,12 +218,31 @@ const PlanPage: React.FC = () => {
             onCompareWithAI={handleCompareWithAI}
           />
           {selectedPlanId && (
-            <Card style={{ marginTop: 16, textAlign: "center" }}>
+            <Card
+              className="anim-bounce-in"
+              style={{
+                marginTop: 16,
+                textAlign: "center",
+                borderRadius: 12,
+                boxShadow: "var(--shadow-md)",
+              }}
+            >
               <Space>
-                <Button type="primary" size="large" onClick={handleViewTrip}>
+                <Button
+                  type="primary"
+                  size="large"
+                  onClick={handleViewTrip}
+                  style={{
+                    borderRadius: 8,
+                    background: "linear-gradient(135deg, #1677ff 0%, #722ed1 100%)",
+                    border: "none",
+                  }}
+                >
                   View Full Itinerary
                 </Button>
-                <Button onClick={handleReset}>Plan Another Trip</Button>
+                <Button onClick={handleReset} style={{ borderRadius: 8 }}>
+                  Plan Another Trip
+                </Button>
               </Space>
             </Card>
           )}
@@ -203,7 +251,10 @@ const PlanPage: React.FC = () => {
 
       {/* Form (show when not generating and no results) */}
       {!loading && alternatives.length === 0 && (
-        <Card>
+        <Card
+          className="card-elevated anim-slide-up"
+          style={{ borderRadius: 12 }}
+        >
           <TripForm
             onSubmit={handleSubmit}
             loading={loading}
