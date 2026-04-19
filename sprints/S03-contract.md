@@ -61,6 +61,5 @@ class OpenTripMapClient:
 ## Notes
 
 - Use `httpx.AsyncClient` as a class attribute, initialized once.
-- Ch13 pattern: singleton service wrapping external API with shared instance.
-- Ch14 pattern: return empty results on failure, never raise to caller.
+- Return empty results on failure, never raise to caller.
 - Caching will be added in S09 (Database Layer) — for now, just log cache misses.
