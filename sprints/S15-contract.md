@@ -75,6 +75,8 @@ This can be a shell script or a `Makefile` target.
 - [ ] Routes are geographically optimized (no excessive backtracking)
 - [ ] Budget breakdown included
 - [ ] Exports to Markdown (and JSON/HTML)
-- [ ] Plans persisted in SQLite
+- [ ] Plans persisted in SQLite (default) or PostgreSQL (Docker)
 - [ ] Full CRUD via CLI: plan, list, show, export, delete
-- [ ] No AI/LLM used in final product
+- [ ] LLM-powered plan generation with algorithmic fallback (GLM-5.1)
+- [ ] Multi-plan comparison with 6-dimensional scoring
+- [ ] Web UI with interactive map, AI chat, real-time progress
