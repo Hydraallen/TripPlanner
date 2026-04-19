@@ -24,7 +24,7 @@ Comprehensive API integration tests, update documentation for the full-stack app
 - [ ] `tests/test_web_api.py` covers all API endpoints (CRUD, export, plan generate, LLM generate, chat)
 - [ ] Tests mock external APIs (OpenTripMap, Amap, GLM-5.1)
 - [ ] LLM fallback path tested (LLM fails → algorithmic pipeline)
-- [ ] All 166+ tests pass with no regressions
+- [ ] All 226+ tests pass with no regressions
 - [ ] `README.md` covers: CLI usage, Web usage, Docker quickstart, env config
 - [ ] `.env.example` lists all environment variables
 - [ ] Sprint tracker updated with final status
@@ -33,7 +33,7 @@ Comprehensive API integration tests, update documentation for the full-stack app
 
 | Criterion | Pass | Fail |
 |-----------|------|------|
-| Test coverage | All API endpoints tested, 166+ tests pass | Missing endpoint coverage |
+| Test coverage | All API endpoints tested, 226+ tests pass | Missing endpoint coverage |
 | Documentation | README covers CLI + Web + Docker | Missing sections |
 | Regressions | All existing tests still pass | Any test broken |
 | Sprint tracker | S23 marked Done | Not updated |
