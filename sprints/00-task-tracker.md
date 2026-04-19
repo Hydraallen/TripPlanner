@@ -21,8 +21,8 @@
 | S10 | Multi-Format Export | Done | [S10-contract.md](S10-contract.md) | 3 |
 | S11 | Full CLI Commands | Done | [S11-contract.md](S11-contract.md) | 3 |
 | S12 | Rich UX Polish | Done | [S12-contract.md](S12-contract.md) | 4 |
-| S13 | Weather Integration | Not Started | [S13-contract.md](S13-contract.md) | 4 |
-| S14 | Wikipedia Enrichment | Not Started | [S14-contract.md](S14-contract.md) | 4 |
+| S13 | Weather Integration | Done | [S13-contract.md](S13-contract.md) | 4 |
+| S14 | Wikipedia Enrichment | Done | [S14-contract.md](S14-contract.md) | 4 |
 | S15 | Testing & Demo Prep | Done | [S15-contract.md](S15-contract.md) | 4 |
 | S16 | FastAPI Scaffolding + Trip CRUD | Done | [S16-contract.md](S16-contract.md) | 5 |
 | S17 | Smart Routing + Amap + Plan API | Done | [S17-contract.md](S17-contract.md) | 5 |
@@ -32,11 +32,11 @@
 | S21 | Chat Panel + Polish | Done | [S21-contract.md](S21-contract.md) | 5 |
 | S22 | Docker Setup | Done | [S22-contract.md](S22-contract.md) | 5 |
 | S23 | E2E Testing + Documentation | Done | [S23-contract.md](S23-contract.md) | 5 |
-| S24 | Multi-Plan Data Models + DB Schema | Done | — | 6 |
-| S25 | AI Plan Generator + Scorer | Done | — | 6 |
-| S26 | SSE Progress + Multi-Plan API | Done | — | 6 |
-| S27 | Frontend Plan Comparison UI | Done | — | 6 |
-| S28 | Enhanced AI Chat + Polish | Done | — | 6 |
+| S24 | Multi-Plan Data Models + DB Schema | Done | [S24-contract.md](S24-contract.md) | 6 |
+| S25 | AI Plan Generator + Scorer | Done | [S25-contract.md](S25-contract.md) | 6 |
+| S26 | SSE Progress + Multi-Plan API | Done | [S26-contract.md](S26-contract.md) | 6 |
+| S27 | Frontend Plan Comparison UI | Done | [S27-contract.md](S27-contract.md) | 6 |
+| S28 | Enhanced AI Chat + Polish | Done | [S28-contract.md](S28-contract.md) | 6 |
 
 ## Dependencies
 
@@ -54,6 +54,12 @@ S01 ──→ S02 ──→ S03 ──→ S04
                                               │
                                               ▼
                                             S15
+                                              │
+                                              ▼
+                              S16 ──→ S17 ──→ S18 ──→ S19 ──→ S20 ──→ S21 ──→ S22 ──→ S23
+                                                                                    │
+                                                                                    ▼
+                                                              S24 ──→ S25 ──→ S26 ──→ S27 ──→ S28
 ```
 
 ## Phase Milestones
