@@ -64,6 +64,6 @@ Dev deps: `pytest`, `pytest-asyncio`, `respx`, `ruff`, `mypy`.
 
 ## Notes
 
-- Use `src` layout to avoid import ambiguity (ch14 pattern).
+- Use `src` layout to avoid import ambiguity.
 - `pydantic-settings` reads `.env` automatically via `SettingsConfigDict`.
 - `OPENTRIPMAP_API_KEY` default to empty string — validation happens at API call time, not config time.
