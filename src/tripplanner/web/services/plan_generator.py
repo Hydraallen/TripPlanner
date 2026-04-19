@@ -122,6 +122,7 @@ class PlanGenerator:
         num_days = (end_date - start_date).days + 1
         focuses = list(PlanFocus)[:num_plans]
         alternatives: list[PlanAlternative] = []
+        used_attraction_names: set[str] = set()
 
         for i, focus in enumerate(focuses):
             step_text = f"Generating {focus.value} plan... ({i + 1}/{len(focuses)})"
@@ -149,9 +150,15 @@ class PlanGenerator:
                 weather=weather,
                 center=(lat, lon),
                 num_days=num_days,
+                used_attractions=used_attraction_names,
             )
 
             if plan:
+                # Post-process: filter out attractions that appear in earlier plans
+                plan = self._dedup_plan(plan, used_attraction_names)
+                for day in plan.days:
+                    for a in day.attractions:
+                        used_attraction_names.add(a.name.lower().strip())
                 alternatives.append(
                     PlanAlternative(
                         id=f"plan_{i + 1}",
@@ -200,6 +207,7 @@ class PlanGenerator:
         weather: list[WeatherInfo] | None,
         center: tuple[float, float],
         num_days: int,
+        used_attractions: set[str] | None = None,
     ) -> tuple[TripPlan | None, str]:
         """Try LLM generation, fall back to algorithmic for this single plan.
 
@@ -214,8 +222,9 @@ class PlanGenerator:
                 focus=focus,
                 transport_mode=transport_mode,
                 transport_user_specified=transport_user_specified,
-                places=places[:20],
+                places=places[:30],
                 weather=weather,
+                used_attractions=used_attractions,
             )
             if plan:
                 plan.city = city
@@ -315,6 +324,18 @@ class PlanGenerator:
         if weather:
             itinerary.weather = weather
         return itinerary
+
+    @staticmethod
+    def _dedup_plan(plan: TripPlan, used: set[str]) -> TripPlan:
+        """Remove attractions whose names were already used in earlier plans."""
+        if not used:
+            return plan
+        for day in plan.days:
+            day.attractions = [
+                a for a in day.attractions
+                if a.name.lower().strip() not in used
+            ]
+        return plan
 
     @staticmethod
     def _reorder_by_focus(

@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet";
 import L from "leaflet";
 import type { DayPlan, Attraction } from "../api/client";
+import { googleMapsSearchUrl, googleMapsDirectionsUrl } from "../utils/maps";
 
 import "leaflet/dist/leaflet.css";
 
@@ -54,6 +55,14 @@ const MapView: React.FC<Props> = ({ days, onAttractionClick }) => {
   const allAttractions = days.flatMap((day) =>
     day.attractions.map((a) => ({ ...a, dayNumber: day.day_number }))
   );
+
+  // Build a map of xid → next attraction for directions
+  const nextAttraction = new Map<string, Attraction>();
+  days.forEach((day) => {
+    for (let i = 0; i < day.attractions.length - 1; i++) {
+      nextAttraction.set(day.attractions[i].xid, day.attractions[i + 1]);
+    }
+  });
 
   if (allAttractions.length === 0) {
     return (
@@ -111,6 +120,28 @@ const MapView: React.FC<Props> = ({ days, onAttractionClick }) => {
                       <br />
                       <span style={{ color }}>Day {day.day_number}</span>
                       {a.address && <><br /><small>{a.address}</small></>}
+                      <br />
+                      <a
+                        href={googleMapsSearchUrl(a.name, a.location.latitude, a.location.longitude)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ fontSize: 12, color: "#1677ff" }}
+                      >
+                        View on Google Maps
+                      </a>
+                      {nextAttraction.get(a.xid) && (
+                        <>
+                          <br />
+                          <a
+                            href={googleMapsDirectionsUrl(a.location, nextAttraction.get(a.xid)!.location)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ fontSize: 12, color: "#52c41a" }}
+                          >
+                            Directions to next
+                          </a>
+                        </>
+                      )}
                     </div>
                   </Popup>
                 </Marker>

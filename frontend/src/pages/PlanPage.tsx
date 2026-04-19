@@ -55,7 +55,7 @@ const PlanPage: React.FC = () => {
       esRef.current.close();
     }
 
-    const params: Record<string, unknown> = {
+    const params: Parameters<typeof generateMultiPlan>[0] = {
       city: values.city,
       start_date: values.startDate.format("YYYY-MM-DD"),
       end_date: values.endDate.format("YYYY-MM-DD"),

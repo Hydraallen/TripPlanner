@@ -13,41 +13,60 @@ from tripplanner.core.models import Attraction, PlanFocus, TripPlan, WeatherInfo
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are TripPlanner AI, an expert travel advisor. "
-    "Help users plan personalized travel itineraries with practical advice "
-    "on attractions, food, transportation, and budget."
+    "You are TripPlanner AI, an expert travel advisor with deep knowledge of "
+    "world-famous landmarks, museums, parks, restaurants, and hidden gems for "
+    "every major city.\n\n"
+    "CRITICAL RULES:\n"
+    "1. Prioritize ICONIC, WELL-KNOWN attractions that the city is famous for. "
+    "A visitor to Chicago MUST see Millennium Park, not the Money Museum. "
+    "A visitor to Paris MUST see the Eiffel Tower, not a random park.\n"
+    "2. Use your own training knowledge as the PRIMARY source for attraction "
+    "selection. The POI reference data provided below is only for coordinates "
+    "and logistics — do NOT treat it as a recommendation list.\n"
+    "3. Be realistic with ticket prices: major museums typically cost $15-35, "
+    "observation decks $20-40, zoo/aquarium $20-40, famous parks are often free.\n"
+    "4. Estimate commute times realistically: walking ~5 km/h, transit adds wait time, "
+    "driving ~30 km/h in cities. A 2.5 km walk takes ~30 min, not 45 min.\n"
+    "5. Provide accurate locations (latitude/longitude) for all attractions you name. "
+    "If you're unsure of exact coordinates, estimate based on the city's geography."
 )
 
 _FOCUS_PROMPTS: dict[PlanFocus, str] = {
     PlanFocus.BUDGET: (
-        "Focus on budget-friendly options. Prioritize free or low-cost attractions, "
-        "affordable local eateries, and cost-effective transportation. "
-        "Maximize experiences while minimizing spending."
+        "Focus on budget-friendly options. Choose famous FREE attractions first "
+        "(iconic public parks, famous streets, monuments, waterfronts), then add "
+        "low-cost museums with real admission prices. Pick affordable local eateries "
+        "over tourist traps. Maximize experiences while minimizing spending."
     ),
     PlanFocus.CULTURE: (
-        "Focus on cultural exploration. Prioritize museums, historical sites, "
-        "local traditions, art galleries, and authentic cultural experiences. "
-        "Include food experiences that reflect local cuisine."
+        "Focus on cultural exploration. Choose the city's MOST FAMOUS museums and "
+        "historical sites — the ones every guidebook recommends. Include iconic "
+        "landmarks, renowned art museums, historic districts, and architectural marvels. "
+        "Add authentic local food experiences that reflect the city's culinary identity."
     ),
     PlanFocus.NATURE: (
-        "Focus on nature and relaxation. Prioritize parks, gardens, scenic viewpoints, "
-        "waterfronts, hiking trails, and peaceful spots. "
-        "Include leisurely pacing and outdoor dining."
+        "Focus on nature and relaxation. Choose the city's BEST parks, botanical gardens, "
+        "waterfront areas, scenic trails, and natural landmarks. If the city has a famous "
+        "park (e.g., Millennium Park in Chicago, Central Park in NYC), it MUST be included. "
+        "Include lakefronts, riverwalks, and green spaces. Keep a leisurely pace."
     ),
     PlanFocus.FOOD: (
-        "Focus on culinary experiences. Prioritize local restaurants, street food markets, "
-        "food tours, cooking classes, and specialty cafes. Include both high-end dining and "
-        "affordable local gems. Plan meal-centric days with food-related attractions nearby."
+        "Focus on culinary experiences. Choose the city's most renowned restaurants, "
+        "iconic food markets, famous local specialties, and celebrated food districts. "
+        "Include both high-end dining and beloved affordable local gems. "
+        "Plan meal-centric days with food-related attractions nearby."
     ),
     PlanFocus.ROMANTIC: (
-        "Focus on romantic and intimate experiences. Prioritize scenic viewpoints at sunset, "
-        "fine dining restaurants, waterfront walks, botanical gardens, and cozy cafes. "
-        "Keep a relaxed pace with fewer attractions per day and more quality time."
+        "Focus on romantic and intimate experiences. Choose scenic viewpoints, "
+        "renowned fine dining restaurants, beautiful waterfront walks, iconic gardens, "
+        "and atmospheric neighborhoods. Keep a relaxed pace with fewer attractions "
+        "per day and more quality time at each spot."
     ),
     PlanFocus.ADVENTURE: (
-        "Focus on adventure and active experiences. Prioritize outdoor activities, "
+        "Focus on adventure and active experiences. Choose outdoor activities, "
         "hiking trails, water sports, unique local experiences, and exploration of "
-        "off-the-beaten-path locations. Pack each day with exciting activities."
+        "distinctive neighborhoods. Include the city's most exciting activities and "
+        "pack each day with diverse, thrilling experiences."
     ),
 }
 
@@ -188,6 +207,7 @@ class LLMClient:
         places: list[Attraction] | None = None,
         weather: list[WeatherInfo] | None = None,
         transport_user_specified: bool = True,
+        used_attractions: set[str] | None = None,
     ) -> TripPlan | None:
         """Generate a focused travel plan using LLM with real data.
 
@@ -199,6 +219,7 @@ class LLMClient:
             transport_mode: Transport mode
             places: Pre-collected POI data to include in prompt
             weather: Pre-fetched weather data
+            used_attractions: Names already used in other plans (for dedup)
 
         Returns:
             Validated TripPlan or None on failure.
@@ -222,11 +243,24 @@ class LLMClient:
                 "Set 'transportation' in each day object to your recommendation.\n"
             )
 
+        if used_attractions:
+            prompt += (
+                "\nMANDATORY — The following attractions are already used in other plans. "
+                "You MUST NOT include ANY of them. Choose completely different attractions:\n"
+                + ", ".join(sorted(used_attractions))
+                + "\nDo not include any attraction whose name matches or is similar to one above.\n"
+            )
+
         if places:
-            prompt += "\n\nAvailable places to consider (use these as reference):\n"
-            for p in places[:20]:
+            prompt += (
+                "\n\nPOI reference data (for coordinates/logistics only, "
+                "NOT a recommendation list — use your own knowledge to pick "
+                "the BEST attractions for this city):\n"
+            )
+            for p in places[:30]:
                 prompt += (
                     f"- {p.name} ({p.kinds or 'general'})"
+                    f" @ {p.location.latitude:.4f},{p.location.longitude:.4f}"
                     f" rating:{p.rating or 'N/A'}"
                     f" cost:{p.ticket_price or 0}\n"
                 )

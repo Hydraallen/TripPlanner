@@ -341,7 +341,7 @@ class OpenTripMapClient:
                 GEOAPIFY_BASE,
                 params={
                     "categories": GEOAPIFY_TOURISM_CATEGORIES,
-                    "filter": f"circle:{lon},{lat},{radius}",
+                    "filter": f"circle:{lon},{lat},{min(radius, 5000)}",
                     "bias": f"proximity:{lon},{lat}",
                     "limit": min(limit, 50),
                     "apiKey": self._settings.geoapify_api_key,
@@ -423,6 +423,10 @@ class OpenTripMapClient:
                     "inprop": "url",
                     "pithumbsize": 144,
                     "format": "json",
+                    "origin": "*",
+                },
+                headers={
+                    "User-Agent": "TripPlanner/0.1 (https://github.com/Hydraallen/TripPlanner; educational project)",
                 },
             )
             resp.raise_for_status()
