@@ -1,616 +1,424 @@
 # TripPlanner Implementation Plan
 
-> Derived from `Project Proposal.md` and reference patterns in hello-agents chapter 13 (Intelligent Travel Assistant) and chapter 14 (Deep Research).
-
 ---
 
 ## Architecture Overview
 
-Chapter 13 demonstrates a 4-layer architecture for a travel planning app. We adapt this for a CLI-first tool (no AI/LLM per proposal constraints):
+Full-stack travel itinerary generator with CLI and web interfaces sharing a common Python backend. React SPA frontend with interactive maps, AI chat, and multi-plan comparison.
 
 ```
 ┌─────────────────────────────────────────────────┐
-│  CLI Layer (Click + Rich)                       │
-│  plan / list / show / export / delete           │
+│  CLI (Click + Rich)  │  React SPA (Vite + Ant Design + Leaflet)  │
 ├─────────────────────────────────────────────────┤
-│  Logic Layer                                    │
+│  FastAPI Backend                                 │
+│  /api/trips  /api/plans  /api/chat              │
+├─────────────────────────────────────────────────┤
+│  Services Layer                                  │
+│  PlanGenerator → PlanScorer → LLM → Progress    │
+├─────────────────────────────────────────────────┤
+│  Logic Layer                                     │
 │  scorer → optimizer → scheduler → budget_calc   │
 ├─────────────────────────────────────────────────┤
-│  API Client Layer                               │
-│  OpenTripMap · Open-Meteo · Wikipedia           │
+│  API Client Layer (smart routing)                │
+│  Overpass (OSM) · Amap · Geoapify · Wikipedia   │
+│  Weather (Open-Meteo) · Routing (OSRM)          │
 ├─────────────────────────────────────────────────┤
-│  Persistence Layer                              │
-│  SQLite (trips + cache) · Jinja2 export         │
+│  Persistence Layer                               │
+│  SQLite (default) · PostgreSQL (Docker) · Export │
 └─────────────────────────────────────────────────┘
 ```
 
-**Data flow:** User input → API clients fetch POIs → Score & filter → Optimize routes → Schedule into days → Calculate budget → Export & persist.
+**Data flow:** User input → API clients fetch POIs (3-tier fallback) → LLM generates multi-focus plans (background task) → 6-dimensional scoring → User selects plan → Persist & display with interactive map.
 
 ---
 
-## Phase 1: Foundation
+## Phase 1: Foundation — DONE
 
-**Milestone:** `tripplanner plan --city Tokyo --dry-run` fetches POIs from OpenTripMap and prints structured results.
-
-### 1.1 Project Scaffolding
+### 1.1 Project Scaffolding — DONE
 
 ```
-tripplanner/
-├── pyproject.toml              # deps, ruff config, entry point
-├── .env.example
-├── .gitignore
-├── src/
-│   └── tripplanner/
-│       ├── __init__.py
-│       ├── cli.py              # Click group + subcommands
-│       ├── core/
-│       │   ├── __init__.py
-│       │   ├── models.py       # Pydantic data models
-│       │   ├── state.py        # Shared TripState pipeline
-│       │   └── config.py       # pydantic-settings
-│       ├── api/
-│       │   ├── __init__.py
-│       │   ├── opentripmap.py  # POI search client
-│       │   ├── weather.py      # Open-Meteo forecast
-│       │   └── wikipedia.py    # Place descriptions
-│       ├── logic/
-│       │   ├── __init__.py
-│       │   ├── scorer.py       # Preference scoring
-│       │   ├── optimizer.py    # Route optimization
-│       │   ├── scheduler.py    # Day-by-day scheduling
-│       │   └── budget.py       # Budget calculator
-│       ├── db/
-│       │   ├── __init__.py
-│       │   ├── models.py       # SQLAlchemy ORM
-│       │   ├── crud.py         # Database operations
-│       │   └── cache.py        # API response cache
-│       └── export/
-│           ├── __init__.py
-│           ├── markdown.py
-│           ├── json_export.py
-│           ├── html_gen.py
-│           └── templates/
-│               ├── itinerary.md.j2
-│               ├── itinerary.html.j2
-│               └── styles.css
-└── tests/
-    ├── __init__.py
-    ├── conftest.py
-    ├── test_api.py
-    ├── test_logic.py
-    ├── test_export.py
-    └── test_cli.py
+src/tripplanner/
+├── __init__.py
+├── cli.py              # Click group + subcommands
+├── core/
+│   ├── models.py       # Pydantic v2 data models (Location, Attraction, DayPlan, TripPlan, PlanFocus, PlanAlternative, etc.)
+│   ├── state.py        # Shared TripState pipeline
+│   └── config.py       # pydantic-settings (.env)
+├── api/
+│   ├── opentripmap.py  # POI search: Overpass → Geoapify → Wikipedia (3-tier fallback)
+│   ├── weather.py      # Open-Meteo forecast
+│   └── wikipedia.py    # Place descriptions
+├── logic/
+│   ├── scorer.py       # Preference scoring (category 40% + rating 30% + popularity 30%)
+│   ├── optimizer.py    # Route optimization (greedy nearest-neighbor clustering)
+│   ├── scheduler.py    # Day-by-day scheduling with meal placement
+│   └── budget.py       # Budget calculator
+├── db/
+│   ├── models.py       # SQLAlchemy 2.x async ORM
+│   ├── crud.py         # Database CRUD operations
+│   └── cache.py        # API response cache (24h TTL)
+├── web/
+│   ├── app.py          # FastAPI app factory
+│   ├── routers/        # trips, plans, chat endpoints
+│   └── services/       # planning, plan_generator, plan_scorer, llm, progress, region
+├── export/
+│   ├── markdown.py     # Jinja2 template
+│   ├── json_export.py  # Pydantic JSON dump
+│   └── html_gen.py     # Jinja2 HTML template
+└── tests/              # pytest suite (226 tests)
+
+frontend/src/
+├── pages/              # HomePage, PlanPage, TripDetailPage
+├── components/         # MapView, DayCard, ChatPanel, TripForm, BudgetChart, PlanComparison, Layout
+├── api/                # TypeScript API client with typed interfaces
+└── utils/              # Google Maps links, OSRM routing
 ```
 
-Key decisions:
+### 1.2 Core Models — DONE
 
-- **src layout** (`src/tripplanner/`) — avoids import ambiguity (ch14 pattern).
-- **pydantic-settings** for config — proven in ch13/ch14.
-- **Click** for CLI with subcommands: `plan`, `list`, `show`, `export`, `delete`.
-- **Separate `logic/budget.py`** — budget calculation is a distinct concern (ch13 models it separately).
+Pydantic v2 models built bottom-up:
 
-### 1.2 `core/config.py` — Settings
+- **Location** — validated lon/lat with numeric coercion
+- **Attraction** — POI with xid, name, location, kinds, rating, ticket_price, score, time_slot, commute_minutes
+- **Meal** — type (breakfast/lunch/dinner/snack), name, estimated_cost, time_slot
+- **DayPlan** — date, day_number, transportation, attractions list, meals list
+- **TripPlan** — city, date range, days, weather, budget, suggestions
+- **PlanFocus** — enum: budget, culture, nature, food, romantic, adventure
+- **PlanAlternative** — id, focus, title, description, plan, scores, estimated_cost, source
+- **PlanScores** — 6-dimensional: price, rating, convenience, diversity, safety, popularity
+- **GenerationProgress** — SSE progress tracking: status, progress%, step description
+- **Budget** — total breakdown: attractions, meals, hotels, transportation
 
-Pattern from ch13's `Settings(BaseSettings)` + ch14's `Configuration`:
+### 1.3 Configuration — DONE
 
-```python
-class Settings(BaseSettings):
-    opentripmap_api_key: str = ""
-    openmeteo_base_url: str = "https://api.open-meteo.com/v1"
-    wikipedia_base_url: str = "https://en.wikipedia.org/api/rest_v1"
-    database_url: str = "sqlite:///./trips.db"
-    max_places_per_trip: int = 20
-    default_search_radius: int = 10000  # meters
-    cache_ttl: int = 86400              # 24 hours
-    default_visit_duration: int = 90    # minutes
-    walking_speed_kmh: float = 5.0
-    transit_speed_kmh: float = 25.0
-    driving_speed_kmh: float = 30.0
+`pydantic-settings` + `.env` file:
 
-    model_config = SettingsConfigDict(env_file=".env")
-```
-
-Ch13 lesson: external APIs return inconsistent field names (e.g. `lng` vs `lon` vs `longitude`). Config centralizes endpoint URLs so API clients don't hardcode them.
-
-### 1.3 `core/models.py` — Bottom-Up Pydantic Data Models
-
-Chapter 13 Section 13.2 demonstrates **bottom-up model design**: build simple models first (Location), then compose into complex ones (DayPlan, TripPlan). We follow this exact approach.
-
-**Lesson from ch13:** Use `Field(...)` with validation constraints (`ge`, `le`, `gt`) and `@field_validator` for cleaning messy API data. Ch13 shows temperature parsing (`"16°C" → 16`); we'll need similar for OpenTripMap data.
-
-```python
-from pydantic import BaseModel, Field, field_validator
-from datetime import date, datetime
-from typing import Optional
-
-# --- Base layer ---
-
-class Location(BaseModel):
-    """Geographic coordinates (ch13 pattern: validated lon/lat)."""
-    longitude: float = Field(..., ge=-180, le=180)
-    latitude: float = Field(..., ge=-90, le=90)
-
-    @field_validator("longitude", "latitude", mode="before")
-    @classmethod
-    def coerce_numeric(cls, v: object) -> float:
-        """Handle string coords from API responses."""
-        if isinstance(v, str):
-            return float(v.replace(",", "."))
-        return float(v)
-
-# --- Entity layer (ch13 has Attraction, Meal, Hotel separately) ---
-
-class Attraction(BaseModel):
-    """A tourist attraction or point of interest."""
-    xid: str
-    name: str
-    address: str = ""
-    location: Location
-    categories: list[str] = Field(default_factory=list)
-    kinds: str = ""                    # OpenTripMap "kinds" field
-    visit_duration: int = Field(default=90, gt=0, description="minutes")
-    description: str | None = None
-    rating: float | None = Field(default=None, ge=0, le=5)
-    ticket_price: float = Field(default=0, ge=0)
-    score: float = Field(default=0.0, ge=0, le=1)  # computed by scorer
-
-    @field_validator("rating", mode="before")
-    @classmethod
-    def clamp_rating(cls, v: object) -> float | None:
-        if v is None:
-            return None
-        val = float(v)
-        return min(max(val, 0.0), 5.0)
-
-class Meal(BaseModel):
-    """Dining recommendation (adapted from ch13 Meal model)."""
-    type: str = Field(..., description="breakfast/lunch/dinner/snack")
-    name: str
-    address: str = ""
-    location: Location | None = None
-    description: str | None = None
-    estimated_cost: float = Field(default=0, ge=0)
-
-class Hotel(BaseModel):
-    """Accommodation recommendation (adapted from ch13 Hotel model)."""
-    name: str
-    address: str = ""
-    location: Location | None = None
-    price_range: str = ""
-    rating: float | None = Field(default=None, ge=0, le=5)
-    estimated_cost_per_night: float = Field(default=0, ge=0)
-
-# --- Aggregation layer ---
-
-class Budget(BaseModel):
-    """Budget breakdown (directly from ch13 Budget model)."""
-    total_attractions: float = Field(default=0, ge=0)
-    total_hotels: float = Field(default=0, ge=0)
-    total_meals: float = Field(default=0, ge=0)
-    total_transportation: float = Field(default=0, ge=0)
-    total: float = Field(default=0, ge=0)
-
-class WeatherInfo(BaseModel):
-    """Weather forecast (adapted from ch13, using Open-Meteo fields)."""
-    date: date
-    temp_high: float = Field(..., description="Celsius")
-    temp_low: float = Field(..., description="Celsius")
-    precipitation_prob: float = Field(default=0, ge=0, le=100)
-    weather_code: int = Field(default=0, description="WMO code")
-    wind_speed: float = Field(default=0, ge=0, description="km/h")
-
-    @property
-    def is_rainy(self) -> bool:
-        return self.precipitation_prob > 50
-
-    @property
-    def description(self) -> str:
-        """Map WMO code to human-readable text."""
-        codes = {0: "Clear", 1: "Mainly clear", 2: "Partly cloudy",
-                 3: "Overcast", 51: "Drizzle", 61: "Rain", 71: "Snow",
-                 80: "Showers", 95: "Thunderstorm"}
-        return codes.get(self.weather_code, "Unknown")
-
-# --- Plan layer ---
-
-class DayPlan(BaseModel):
-    """Single day itinerary (enriched from ch13 DayPlan)."""
-    date: date
-    day_number: int = Field(..., gt=0)
-    description: str = ""
-    transportation: str = "walking"
-    attractions: list[Attraction] = Field(default_factory=list)
-    meals: list[Meal] = Field(default_factory=list)
-    hotel: Hotel | None = None
-
-class TripPlan(BaseModel):
-    """Complete travel plan (adapted from ch13 TripPlan, without AI-generated fields)."""
-    city: str
-    start_date: date
-    end_date: date
-    days: list[DayPlan] = Field(default_factory=list)
-    weather: list[WeatherInfo] = Field(default_factory=list)
-    budget: Budget | None = None
-    suggestions: list[str] = Field(default_factory=list)
-
-# --- Persistence layer ---
-
-class Trip(BaseModel):
-    """Persisted trip record."""
-    id: str
-    city: str
-    start_date: date
-    end_date: date
-    interests: list[str]
-    transport_mode: str = "walking"
-    plan: TripPlan | None = None
-    created_at: datetime
-```
-
-**Key differences from ch13:**
-- No `overall_suggestions` (LLM-generated in ch13). Replaced with `suggestions: list[str]` computed from weather/budget.
-- No `image_url` on Attraction (ch13 uses Unsplash; we skip images for MVP, can add via Wikipedia later).
-- Weather uses Open-Meteo fields (WMO codes, precipitation probability) instead of Amap text-based weather.
-- Budget is computed algorithmically instead of LLM-estimated.
-
-### 1.4 `api/opentripmap.py` — API Client
-
-Ch13 pattern: singleton service class (`AmapService`) wrapping external API. Ch14 pattern: consistent error handling with empty results + notice on failure.
-
-```python
-class OpenTripMapClient:
-    """Singleton API client (ch13 AmapService pattern)."""
-
-    async def geoname(self, city: str) -> tuple[float, float]:
-        """Get city coordinates. Returns (lat, lon)."""
-
-    async def search_places(
-        self, lat: float, lon: float, radius: int, kinds: str | None = None
-    ) -> list[Attraction]:
-        """Fetch POIs within radius. All responses cached via db/cache.py."""
-
-    async def place_detail(self, xid: str) -> Attraction | None:
-        """Get full details for a specific place."""
-
-    async def search_city(
-        self, city: str, interests: list[str], radius: int
-    ) -> list[Attraction]:
-        """High-level: geocode city → search POIs → enrich with details."""
-```
-
-**Ch13 lesson on shared instances:** Ch13 Section 13.4.3 shows that multiple agents sharing one MCP instance is better than creating separate ones. Similarly, our `OpenTripMapClient` should be a single instance shared across the pipeline, with built-in caching to respect the 10k/day rate limit.
-
-**Error handling (ch14 pattern):**
-```python
-async def search_places(self, lat, lon, radius, kinds=None):
-    try:
-        raw = await self._request("radius", params={...})
-        return [self._parse_place(p) for p in raw]
-    except httpx.HTTPError as e:
-        logger.warning(f"OpenTripMap search failed: {e}")
-        return []  # graceful degradation, not crash
-```
-
-**Milestone checkpoint:** `tripplanner plan --city Tokyo --dry-run` fetches and prints POIs.
+- `AMAP_API_KEY` — for Chinese cities (free, 5k calls/day)
+- `OPENAI_API_KEY` / `OPENAI_ENDPOINT` / `OPENAI_MODEL_NAME` — GLM-5.1 LLM
+- `GEOAPIFY_API_KEY` — optional reverse geocoding fallback
+- `DATABASE_URL` — SQLite default or PostgreSQL
+- Walking/transit/driving speed constants for commute estimation
 
 ---
 
-## Phase 2: Core Logic
+## Phase 2: Core Logic — DONE
 
-**Milestone:** Generate a valid 3-day itinerary with 8-12 places, optimized routes, budget breakdown.
+### 2.1 Scorer — DONE
 
-### 2.1 `logic/scorer.py` — Preference Scorer
-
-From proposal:
+`logic/scorer.py` computes composite score for each POI:
 
 ```
 score = (category_match * 0.4) + (rating_normalized * 0.3) + (popularity * 0.3)
 ```
 
-- `category_match`: Jaccard similarity between user interests and place `kinds` (comma-separated).
-- `rating_normalized`: `rate / 5.0`. Handle missing ratings with dataset mean.
-- `popularity`: `otm:popularity` or fallback to number of Wikipedia sources mentioning the place.
+- Category match: Jaccard similarity between user interests and place kinds
+- Rating: normalized to 0–1, missing ratings use dataset mean
+- Popularity: based on data source indicators
 
-### 2.2 `logic/optimizer.py` — Route Optimization
+### 2.2 Route Optimizer — DONE
 
-Greedy nearest-neighbor clustering (from proposal):
+`logic/optimizer.py` — greedy nearest-neighbor clustering:
 
-1. Start from city center (from `geoname`).
-2. Pick highest-scored unvisited place as anchor.
-3. Greedily add nearest unvisited place within threshold.
-4. When day has ~4 places, start new day.
-5. Repeat until all top-scored places assigned.
+1. Start from city center coordinates
+2. Pick highest-scored unvisited place as anchor
+3. Greedily add nearest unvisited place within threshold
+4. When day has ~4 places, start new cluster
+5. Repeat until all top-scored places assigned
 
-Haversine distance (no paid routing API):
+Haversine distance calculation for proximity estimation.
 
-```python
-def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R = 6371
-    dlat, dlon = radians(lat2 - lat1), radians(lon2 - lon1)
-    a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
-    return R * 2 * atan2(sqrt(a), sqrt(1 - a))
+### 2.3 Scheduler — DONE
 
-def estimate_travel_time(distance_km: float, mode: str = "walking") -> int:
-    speeds = {"walking": 5, "transit": 25, "driving": 30}
-    return int((distance_km / speeds[mode]) * 60)
-```
+`logic/scheduler.py` — splits optimized clusters into DayPlan objects:
 
-### 2.3 `logic/scheduler.py` — Day Scheduler
+- Time slots: morning (9–12), afternoon (13–17), evening (18–21)
+- Visit durations: museums ~120min, viewpoints ~45min, parks ~60min
+- Travel time between consecutive places
+- Meal placement: breakfast 08:00, lunch 12:00, dinner 18:00
+- Weather-aware: prefers indoor venues on rainy days
 
-Split optimized places into `DayPlan` objects. Ch13's DayPlan includes meals and hotels — we incorporate that richness:
+### 2.4 Budget Calculator — DONE
 
-- **Time slots:** morning (9-12), afternoon (13-17), evening (18-21).
-- **Visit duration:** 90 min for attractions (configurable), 60 min for restaurants.
-- **Travel time:** inserted between consecutive places using `estimate_travel_time()`.
-- **Meal placeholders:** if `kinds` contains "restaurants" or "food", insert `Meal` objects for lunch (12:00) and dinner (18:00) at nearby restaurants.
-- **Weather-aware (stretch):** if `WeatherInfo.is_rainy`, prefer indoor places (museums, churches) over outdoor ones (parks, viewpoints).
+`logic/budget.py` — algorithmic cost estimation:
 
-### 2.4 `logic/budget.py` — Budget Calculator
+- Attraction costs from API ticket_price data
+- Meal cost heuristics: breakfast ~$10, lunch ~$15, dinner ~$25
+- Transport estimation based on mode and distance
+- Hotel estimation per night
 
-Ch13 computes budget via LLM estimation. We compute it algorithmically:
+### 2.5 Pipeline State — DONE
 
-```python
-def calculate_budget(plan: TripPlan, transport_mode: str) -> Budget:
-    total_attractions = sum(a.ticket_price for day in plan.days for a in day.attractions)
-    total_hotels = sum(h.estimated_cost_per_night for day in plan.days if day.hotel for _ in [1])
-    total_meals = sum(m.estimated_cost for day in plan.days for m in day.meals)
-    # Transportation: estimate based on city radius and mode
-    total_transportation = estimate_transport_cost(plan, transport_mode)
-    return Budget(
-        total_attractions=total_attractions,
-        total_hotels=total_hotels,
-        total_meals=total_meals,
-        total_transportation=total_transportation,
-        total=total_attractions + total_hotels + total_meals + total_transportation,
-    )
-```
-
-Default cost heuristics when API data is missing:
-- Hotel: budget ¥300/night, mid-range ¥600/night, luxury ¥1200/night (or local equivalents).
-- Meals: breakfast ¥30, lunch ¥60, dinner ¥80.
-- Transport: walking ¥0, transit ¥10/trip, driving ¥50/day (gas/parking).
-
-### 2.5 `core/state.py` — Pipeline State
-
-Ch14's state management pattern adapted for our pipeline:
-
-```python
-class TripState:
-    """Immutable pipeline state (ch14 pattern)."""
-    city: str
-    start_date: date
-    end_date: date
-    interests: list[str]
-    transport_mode: str
-    city_coords: tuple[float, float] | None = None
-    raw_places: list[Attraction] = []       # from API
-    scored_places: list[Attraction] = []    # after scorer
-    optimized_places: list[Attraction] = [] # after optimizer
-    itinerary: TripPlan | None = None       # after scheduler + budget
-```
-
-**Milestone checkpoint:** `tripplanner plan --city Paris --days 3 --interests museums,food` generates a valid itinerary internally.
+`core/state.py` — TripState manages the generation pipeline flow through all stages.
 
 ---
 
-## Phase 3: Persistence & Export
+## Phase 3: API Clients — DONE
 
-**Milestone:** Full CLI workflow: plan → save → list → show → export → delete.
+### 3.1 POI Data: Three-Tier Fallback — DONE
 
-### 3.1 `db/models.py` — SQLAlchemy ORM
+`api/opentripmap.py` implements cascading fallback:
 
-```python
-class TripRow(Base):
-    __tablename__ = "trips"
-    id: Mapped[str]                        # UUID primary key
-    city: Mapped[str]
-    start_date: Mapped[date]
-    end_date: Mapped[date]
-    interests: Mapped[str]                 # JSON-serialized list
-    transport_mode: Mapped[str]            # walking/transit/driving
-    plan_json: Mapped[str | None]          # full TripPlan as JSON
-    created_at: Mapped[datetime]
+1. **Overpass API (OSM)** — primary, free, global coverage
+2. **Geoapify** — fallback, respects 5000m radius limit
+3. **Wikipedia Geosearch** — last resort, with proper User-Agent header
 
-class CacheRow(Base):
-    __tablename__ = "api_cache"
-    key: Mapped[str]                       # hash of URL + params
-    response: Mapped[str]                  # JSON response body
-    expires_at: Mapped[datetime]
-```
+Each tier returns normalized `Attraction` objects. If one source fails, the next automatically takes over.
 
-Single-table trips design (JSON blob) + separate cache table. Simple, avoids complex joins for MVP.
+### 3.2 Smart Region Routing — DONE
 
-### 3.2 `db/crud.py` — Database Operations
+`web/services/region.py` auto-detects destination type:
 
-```python
-async def save_trip(trip: Trip) -> str: ...
-async def get_trip(trip_id: str) -> Trip | None: ...
-async def list_trips(limit: int = 50) -> list[Trip]: ...
-async def delete_trip(trip_id: str) -> bool: ...
-```
+- Chinese characters or known Chinese cities → Amap API (requires API key)
+- All other destinations → free Overpass API (no key needed)
 
-### 3.3 `db/cache.py` — API Response Cache
+### 3.3 Weather — DONE
 
-Avoid redundant OpenTripMap calls (10k/day limit). Ch13 lesson: shared API instance + caching prevents rate limit issues.
+`api/weather.py` — Open-Meteo daily forecast (free, no auth):
 
-```python
-async def get_cached(key: str) -> dict | None:
-    """Return cached response if not expired."""
+- Fetches temp_high, temp_low, precipitation, wind speed
+- WMO weather code → human-readable description
+- Integrated into plan scheduling for weather-aware attraction selection
 
-async def set_cached(key: str, value: dict, ttl: int = 86400) -> None:
-    """Store response with expiry."""
-```
+---
 
-### 3.4 `export/` — Multi-Format Exporters
+## Phase 4: Persistence & Export — DONE
 
-#### `export/markdown.py` — Jinja2 Template
+### 4.1 Database — DONE
 
-```markdown
-# {{ city }} Trip Plan
-**{{ start_date }} — {{ end_date }}**
+SQLAlchemy 2.x async ORM:
 
-{% if budget %}
-## Budget Overview
-| Category | Cost |
-|----------|------|
-| Attractions | {{ budget.total_attractions }} |
-| Hotels | {{ budget.total_hotels }} |
-| Meals | {{ budget.total_meals }} |
-| Transport | {{ budget.total_transportation }} |
-| **Total** | **{{ budget.total }}** |
-{% endif %}
+- **Trips table** — UUID id, city, dates, status (draft/generating/completed), generated_plans JSON, selected_plan_id
+- **Cache table** — API response cache with 24h TTL
+- Auto-creates tables on startup
+- SQLite default (zero config), PostgreSQL in Docker
 
-{% for day in days %}
-## Day {{ day.day_number }} — {{ day.date }}
-{% if day.weather %}_{{ day.weather.description }}, {{ day.weather.temp_low }}–{{ day.weather.temp_high }}°C_{% endif %}
+### 4.2 CRUD Operations — DONE
 
-### Attractions
-{% for a in day.attractions %}
-{{ loop.index }}. **{{ a.name }}** — {{ a.visit_duration }} min
-   {{ a.address }} | Rating: {{ a.rating or "N/A" }}/5
-{% endfor %}
+`db/crud.py` — full async CRUD: save, get, list, delete trips.
 
-{% if day.meals %}
-### Meals
-{% for m in day.meals %}
-- **{{ m.type | title }}**: {{ m.name }} (~{{ m.estimated_cost }})
-{% endfor %}
-{% endif %}
-{% endfor %}
-```
+### 4.3 Export — DONE
 
-#### `export/json_export.py`
+Three formats via Jinja2 templates and Pydantic serialization:
 
-Pydantic `.model_dump_json()` with `exclude_none=True`.
+- **Markdown** — formatted itinerary with budget table, day-by-day breakdown
+- **JSON** — `model_dump_json()` with `exclude_none=True`
+- **HTML** — styled printable page with embedded CSS
 
-#### `export/html_gen.py`
+---
 
-Jinja2 template `itinerary.html.j2` with embedded CSS. Minimal but printable. Includes map placeholder (static image via OpenStreetMap static tiles or simple coordinate list for MVP).
+## Phase 5: CLI — DONE
 
-### 3.5 `cli.py` — Full CLI Commands
+### 5.1 Commands — DONE
 
-```
-tripplanner plan    --city <city> --dates <start> <end> --interests <tags> [--transport <mode>] [--export <fmt>] [--output <path>]
-tripplanner list    [--format table|json]
-tripplanner show    <trip-id>
-tripplanner export  <trip-id> --format markdown|json|html [--output <path>]
-tripplanner delete  <trip-id>
-```
+| Command | Description |
+|---------|-------------|
+| `tripplanner plan` | Generate trip plan interactively |
+| `tripplanner list` | List all saved trips |
+| `tripplanner show <id>` | Display trip details |
+| `tripplanner export <id>` | Export (markdown/json/html) |
+| `tripplanner delete <id>` | Delete a trip |
+| `tripplanner web [--dev]` | Start web server |
 
-**Milestone checkpoint:**
+### 5.2 Plan Command — DONE
+
+Simplified to minimal input:
 
 ```bash
-tripplanner plan --city Tokyo --dates 2026-04-10 2026-04-13 --interests museums,food --export markdown
-tripplanner list
-tripplanner show <id>
-tripplanner export <id> --format html --output tokyo.html
-tripplanner delete <id>
+tripplanner plan --city "Chicago" --dates 2026-05-01 2026-05-03
 ```
+
+Options: `--num-plans`, `--radius`, `--dry-run`, `--export`, `--output`
+
+Generates multi-plan using same pipeline as web. Shows interactive comparison table, lets user select a plan.
 
 ---
 
-## Phase 4: Polish & Testing
+## Phase 6: Web Backend — DONE
 
-**Milestone:** Demo-ready with 80%+ test coverage, weather integration, optional web frontend.
+### 6.1 FastAPI Application — DONE
 
-### 4.1 Rich CLI UX
+`web/app.py` — FastAPI factory with CORS, routers, lifespan events.
 
-- Progress spinner during API calls (`rich.progress`).
-- Table display for `list` command (`rich.table`).
-- Syntax-highlighted markdown preview for `show`.
-- Budget summary with colored totals.
+### 6.2 Routers — DONE
 
-### 4.2 Weather Integration (`api/weather.py`) — Stretch
+| Router | Endpoints |
+|--------|-----------|
+| `/api/trips` | CRUD: list, create, get, delete, export |
+| `/api/plans` | `POST /generate` (async background), `GET /progress` (SSE), `GET /plans`, `POST /select` |
+| `/api/chat` | `POST` (sync), `GET /stream` (SSE streaming) |
 
-Open-Meteo is free, no auth required:
+### 6.3 Background Multi-Plan Generation — DONE
 
-- Fetch daily forecast for trip date range.
-- `WeatherInfo` model already defined in Phase 1.
-- In `scheduler.py`: swap outdoor places with indoor ones on rainy days (use `kinds` to classify indoor/outdoor).
+`web/services/planning.py`:
 
-### 4.3 Wikipedia Enrichment (`api/wikipedia.py`) — Stretch
+1. `POST /api/plans/generate` → creates trip draft, returns `trip_id` immediately
+2. `asyncio.create_task` kicks off background generation with own DB session
+3. Pipeline: fetch POIs + weather (0–30%) → LLM generates plans per focus (30–90%) → score (90–100%)
+4. Client tracks progress via SSE at `GET /api/plans/{id}/progress`
 
-- Pull summary for each attraction name.
-- Populate `Attraction.description`.
-- Use as fallback when OpenTripMap description is missing.
+### 6.4 Plan Generator — DONE
 
-### 4.4 Web Frontend — Stretch
+`web/services/plan_generator.py`:
 
-Ch13 demonstrates a full Vue 3 + TypeScript SPA with map visualization, editing, and PDF export. For MVP, we keep it minimal:
+- Generates up to 6 plans, each targeting a different focus (budget, culture, nature, food, romantic, adventure)
+- Tries LLM first per focus, falls back to algorithmic pipeline
+- Cross-plan deduplication: tracks used attraction names across plans via prompt + post-processing filter
 
-**Option A: Jinja2-rendered HTML** (fastest to build)
-- FastAPI serves both API endpoints and HTML pages.
-- Templates reuse the same Jinja2 templates from `export/`.
-- No JavaScript framework, minimal interactivity.
+### 6.5 LLM Integration — DONE
 
-**Option B: Simple Vue SPA** (closer to ch13, better UX)
-- Form page → POST to FastAPI → display results.
-- Leaflet/OpenStreetMap for map visualization (free, no API key).
-- Ant Design Vue for UI components (same as ch13).
-- Session storage for trip state (ch13 pattern).
+`web/services/llm.py`:
 
-Ch13 Section 13.6 features to consider porting:
-- Sidebar navigation with anchor scrolling (ch13 Section 13.6.5).
-- Budget display with category breakdown (ch13 Section 13.6.1).
-- Edit mode: reorder/delete attractions per day (ch13 Section 13.6.3).
-- Export to PNG/PDF via html2canvas + jsPDF (ch13 Section 13.6.4).
+- OpenAI-compatible API client (defaults to GLM-5.1)
+- `generate_plan_with_focus()` — generates a single focused plan
+- `chat()` / `chat_stream()` — travel advisor chat with plan context
+- Knowledge-first system prompt: instructs LLM to prioritize iconic landmarks from its own training data
+- POI data presented as "reference coordinates" only, not as recommendation list
+- `used_attractions` parameter for cross-plan dedup
+- Thinking mode disabled for GLM-5.1 compatibility
 
-### 4.5 Testing Strategy
+### 6.6 Plan Scoring — DONE
 
-| Layer | What to Test | How |
-|-------|-------------|-----|
-| `core/models` | Validators, defaults, constraints | Direct instantiation + edge cases |
-| `api/` | HTTP parsing, error handling, caching | Mock httpx with `respx` |
-| `logic/scorer` | Score calculation, category matching | Pure unit tests |
-| `logic/optimizer` | Route ordering, no backtracking | Assert distance monotonicity |
-| `logic/scheduler` | Day splitting, time slot fitting | Assert places fit within day hours |
-| `logic/budget` | Cost calculation, heuristics | Known inputs → expected totals |
-| `db/` | CRUD, cache TTL | In-memory SQLite via `aiosqlite` |
-| `export/` | Template rendering, format correctness | Snapshot tests |
-| `cli/` | Full workflow end-to-end | `click.testing.CliRunner` |
+`web/services/plan_scorer.py` — 6-dimensional scoring:
 
-### 4.6 Fallback Mechanisms
+| Dimension | Weight | Measures |
+|-----------|--------|----------|
+| Price | 25% | Cost efficiency |
+| Rating | 25% | Average attraction quality |
+| Convenience | 20% | Route efficiency |
+| Diversity | 10% | Category variety |
+| Safety | 10% | Daytime-friendly venues |
+| Popularity | 10% | Attraction density |
 
-Ch13 lesson: `_create_fallback_plan()` when agent fails. We adapt this for API failures:
+### 6.7 SSE Progress — DONE
 
-- OpenTripMap returns no results → fall back to top-rated-only search with wider radius.
-- Weather API fails → proceed without weather, skip rain-aware scheduling.
-- Wikipedia fails → use OpenTripMap description only.
-- Any API timeout → return cached data if available, otherwise empty with user-facing notice.
+`web/services/progress.py` — Server-Sent Events stream for real-time generation progress tracking.
 
 ---
 
-## Implementation Order
+## Phase 7: Web Frontend — DONE
 
-```
-Week 1 — Phase 1 (Foundation)
-  Day 1: pyproject.toml, config.py, models.py (all Pydantic models)
-  Day 2: cli.py skeleton (plan command only, Rich output)
-  Day 3: api/opentripmap.py (geoname + radius + xid + place_detail)
-  Day 4: db/cache.py, integrate caching into OpenTripMapClient
-  Day 5: End-to-end: tripplanner plan --city Tokyo --dry-run
+### 7.1 React SPA — DONE
 
-Week 2 — Phase 2 (Core Logic)
-  Day 6: logic/scorer.py + tests
-  Day 7: logic/optimizer.py + tests
-  Day 8: logic/scheduler.py (with meal/hotel logic) + tests
-  Day 9: logic/budget.py + core/state.py, wire full pipeline
-  Day 10: End-to-end: generate valid 3-day itinerary with budget
+React 19 + TypeScript + Vite 8 + Ant Design 5:
 
-Week 3 — Phase 3 (Persistence & Export)
-  Day 11: db/models.py, db/crud.py + tests
-  Day 12: export/markdown.py + templates
-  Day 13: export/json_export.py, export/html_gen.py + templates
-  Day 14: Remaining CLI commands (list, show, export, delete)
-  Day 15: End-to-end: full plan → save → list → export → delete workflow
+| Route | Page | Features |
+|-------|------|----------|
+| `/` | HomePage | Hero section, trip planning form, features showcase |
+| `/plan` | PlanPage | Trip form, real-time progress bar, plan comparison |
+| `/trips/:id` | TripDetailPage | Day-by-day itinerary, interactive map, budget chart, AI chat |
 
-Week 4 — Phase 4 (Polish & Testing)
-  Day 16: Rich progress bars, budget tables, color formatting
-  Day 17: Stretch: weather integration + rain-aware scheduling
-  Day 18: Stretch: Wikipedia enrichment for descriptions
-  Day 19: Full test suite, coverage > 80%
-  Day 20: Demo prep, README, final polish
-```
+### 7.2 Interactive Map — DONE
+
+`components/MapView.tsx` — Leaflet-based map:
+
+- Color-coded markers per day with custom SVG pin icons
+- Route polylines connecting attractions within each day
+- Auto-fit bounds to show all attractions
+- Marker popups with Google Maps link + "Directions to next" link
+
+### 7.3 Day Card — DONE
+
+`components/DayCard.tsx` — day-by-day itinerary display:
+
+- Clickable attraction names → opens Google Maps search in new tab
+- Wikipedia icon link when attraction has wiki article
+- Commute time Popover → shows walking/driving/cycling times from OSRM
+- "Open in Google Maps" directions link in popover
+
+### 7.4 Transport Comparison — DONE
+
+`utils/routing.ts` — OSRM routing client:
+
+- Fetches walking, driving, cycling duration/distance between two points
+- Falls back to haversine estimate on failure
+- Results cached to avoid duplicate API calls
+- Lazy loading: only fetches when user hovers over commute badge
+
+### 7.5 Google Maps Links — DONE
+
+`utils/maps.ts`:
+
+- `googleMapsSearchUrl()` — search for attraction on Google Maps
+- `googleMapsDirectionsUrl()` — directions between two locations
+- `extractWikipediaUrl()` — extract Wikipedia link from description text
+
+### 7.6 Plan Comparison — DONE
+
+`components/PlanComparison.tsx` — side-by-side plan cards with scores, costs, descriptions, and select button.
+
+### 7.7 Budget Chart — DONE
+
+`components/BudgetChart.tsx` — visual budget breakdown by category.
+
+### 7.8 AI Chat Panel — DONE
+
+`components/ChatPanel.tsx` — travel advisor chatbot:
+
+- Context-aware: knows about the current plan
+- Streaming responses via SSE
+- "Compare with AI" button auto-generates comparison prompt
+- Floating panel overlay
+
+### 7.9 Trip Form — DONE
+
+`components/TripForm.tsx` — simplified form:
+
+- Required: city, start date, end date
+- Collapsible advanced options: interests, transport mode
+- AI decides everything by default
+
+---
+
+## Phase 8: LLM Prompt Optimization — DONE
+
+### 8.1 Knowledge-First System Prompt — DONE
+
+System prompt instructs LLM to:
+
+- Prioritize iconic, well-known attractions for each city
+- Use its own training knowledge as primary source
+- Treat POI data as coordinate reference only
+- Use realistic ticket prices (museums $15–35, observation decks $20–40)
+- Estimate commute times realistically (walking ~5 km/h, driving ~30 km/h)
+- Provide accurate lat/lon coordinates
+
+### 8.2 Strengthened Focus Prompts — DONE
+
+Each focus prompt now includes specific guidance:
+
+- Budget: "Choose famous FREE attractions first (iconic parks, monuments, waterfronts)"
+- Culture: "Choose the city's MOST FAMOUS museums — the ones every guidebook recommends"
+- Nature: "If the city has a famous park, it MUST be included"
+- Food: "Choose the city's most renowned restaurants and iconic food markets"
+
+### 8.3 Cross-Plan Deduplication — DONE
+
+Two-layer dedup strategy:
+
+1. **Prompt-level** — passes `used_attractions` set to LLM with mandatory exclusion instruction
+2. **Post-processing** — `_dedup_plan()` filter removes any attractions that appear in earlier plans
+
+Result: 0 duplicate attractions across plans (verified with Chicago and Boston tests).
+
+---
+
+## Phase 9: Docker & Deployment — DONE
+
+### 9.1 Docker Compose — DONE
+
+- Backend: Python container with FastAPI
+- Frontend: Node container with Vite build
+- PostgreSQL: production database
+- Nginx: reverse proxy for static files
+- `docker compose up --build` to launch everything
+
+---
+
+## Test Results
+
+- **226 tests passing** across all layers
+- Coverage: models, API clients, logic, DB, CLI, plan generator, plan scorer
+- `pytest` with `asyncio_mode = "auto"`, `respx` for HTTP mocking
 
 ---
 
@@ -619,31 +427,16 @@ Week 4 — Phase 4 (Polish & Testing)
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | Project layout | `src/tripplanner/` | Avoids import ambiguity, standard Python packaging |
-| Data models | Bottom-up Pydantic (ch13 §13.2) | `Location → Attraction/Meal/Hotel → DayPlan → TripPlan`. Composable, validated. |
-| Field validators | `@field_validator` on models | Ch13 shows this for messy API data (coords as strings, ratings out of range) |
-| Budget model | Separate `Budget` class + `logic/budget.py` | Ch13 separates budget from itinerary. Algorithmic calculation replaces LLM estimation. |
-| Config | `pydantic-settings` + `.env` | Proven in ch13/ch14, type-safe |
-| Async | `httpx` async + `aiosqlite` | Proposal requires async I/O, future-proof |
-| ORM | SQLAlchemy 2.x async | Standard, well-documented, async support |
-| CLI | Click 8.x with Rich | Proposal requirement, Rich for UX |
-| Templates | Jinja2 | Proposal requirement, shared between export and web frontend |
-| Caching | SQLite with TTL | Respects OpenTripMap 10k/day limit, ch13 lesson on shared instances |
-| Route optimization | Greedy nearest-neighbor | Simple, sufficient for MVP (max 20 places) |
-| DB schema | Single table + JSON blob | MVP simplicity, avoids premature normalization |
-| Frontend | Jinja2-rendered HTML (MVP), Vue SPA (stretch) | Not the focus, can evolve to ch13-style SPA later |
-| Fallback | Graceful degradation per-API | Ch13 pattern: always return structured data, never crash |
-| Meal/Hotel | Models defined but populated heuristically | Ch13 has rich Meal/Hotel models. We define them now, populate with defaults + API data when available |
-
----
-
-## What NOT to Copy from Chapter 13
-
-| Ch13 Feature | Why We Skip It |
-|-------------|---------------|
-| LLM-powered agents (4 specialized agents) | Proposal explicitly forbids AI/LLM in final product |
-| MCP tool integration (`MCPTool`, `auto_expand`) | No need for agent-tool protocol without LLM |
-| Amap (高德地图) API | Using OpenTripMap (free, global coverage) |
-| Unsplash image service | Not in proposal, can add later via Wikipedia |
-| `sessionStorage` for persistence | Using SQLite instead |
-| Vue 3 SPA for MVP | CLI-first; web frontend is stretch goal |
-| Prompt engineering for tool calling | No LLM = no prompts needed |
+| Data models | Bottom-up Pydantic v2 | Location → Attraction → DayPlan → TripPlan. Composable, validated. |
+| Async | `httpx` + `aiosqlite` + SQLAlchemy 2.x async | Full async stack, future-proof |
+| CLI | Click 8.x with Rich tables | Interactive comparison table, formatted output |
+| Database | SQLite default, PostgreSQL in Docker | Zero-config for development, scalable for production |
+| Route optimization | Greedy nearest-neighbor | Simple, sufficient for ≤20 places per trip |
+| POI fallback | 3-tier: Overpass → Geoapify → Wikipedia | Graceful degradation, never crashes |
+| Region routing | Auto-detect Chinese destinations → Amap | Free for international, Amap for China accuracy |
+| Multi-plan | 6 focus types, LLM per focus | Diverse options, user compares and selects |
+| LLM | GLM-5.1 via OpenAI-compatible API | Knowledge-first prompt, algorithmic fallback |
+| Cross-plan dedup | Prompt + post-processing filter | 0 duplicate attractions across plans |
+| Frontend | React 19 + Ant Design 5 + Leaflet | Modern SPA with interactive map |
+| Transport comparison | OSRM (free, no key) | Walking/driving/cycling times on hover |
+| Background generation | `asyncio.create_task` with SSE | Non-blocking, real-time progress updates |
